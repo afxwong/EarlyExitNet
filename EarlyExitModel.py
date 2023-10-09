@@ -12,7 +12,6 @@ class EarlyExitModel(nn.Module):
         self.exit_modules = []
         self.original_modules = {}
 
-
     def clear_exits(self):
         for attr, original_module in self.original_modules.items():
             setattr(self.model, attr, original_module)
@@ -28,15 +27,18 @@ class EarlyExitModel(nn.Module):
         return optional_exit_module
 
     def forward(self, X):
+        # Check the device of input tensor X and move to the same device as the model
+        current_device = next(self.model.parameters()).device
+        X = X.to(current_device)
+
         y_hat = self.model(X)
         remaining_idx = torch.arange(len(X))
-        exit_ids_taken = torch.ones(len(X)) * len(self.exit_modules)
+        exit_ids_taken = torch.ones(len(X), device=current_device) * len(self.exit_modules)
+
+        # You can uncomment this part if you need to work with the exit indices
         # for i, exit_module in enumerate(self.exit_modules):
         #     exit_idx = exit_module.exit_idx
         #     original_idx = remaining_idx[exit_idx]
         #     exit_ids_taken[original_idx] = i
 
         return y_hat, exit_ids_taken
-
-
-
