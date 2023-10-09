@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from EarlyStopException import EarlyExitException
 
 class OptionalExitModule(nn.Module):
 
@@ -61,9 +62,9 @@ class OptionalExitModule(nn.Module):
             self.early_y = y_classify
 
         if num_exits == batch_size:
-            raise Exception("All Early Exited")
+            raise EarlyExitException()
 
-        return X[~exit_mask]
+        return self.module(X[~exit_mask])
 
 
 

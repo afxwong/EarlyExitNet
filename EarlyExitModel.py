@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+from EarlyStopException import EarlyExitException
 from OptionalExitModule import OptionalExitModule
 
 class EarlyExitModel(nn.Module):
@@ -28,14 +29,30 @@ class EarlyExitModel(nn.Module):
         return optional_exit_module
 
     def forward(self, X):
+        last_layer_y_hat = None
         try:
             last_layer_y_hat = self.model(X)
         except Exception as e:
-            if str(e).startswith('All Early Exited'):
-                pass
-            else:
+            if not isinstance(e, EarlyExitException):
                 raise e
-        return last_layer_y_hat
+        y_hat = torch.empty((len(X), self.num_outputs))
+        exit_points = torch.ones(len(X)) * len(self.exit_modules)
+        idx = torch.arange(len(X))
+        for i, exit_module in enumerate(self.exit_modules):
+            if len(idx) == 0:
+                break
+            if exit_module.early_y is None:
+                continue
+            original_idx = idx[exit_module.exit_idx]
+            y_hat[original_idx] = exit_module.early_y
+            exit_points[original_idx] = i
+            keep_mask = torch.ones(idx.shape, dtype=torch.bool)
+            keep_mask[exit_module.exit_idx] = False
+            idx = idx[keep_mask]
+        if last_layer_y_hat is not None:
+            y_hat[idx] = last_layer_y_hat
+
+        return y_hat, exit_points
 
 
 

@@ -67,7 +67,7 @@ class CustomDataset(Dataset):
         if self.transform is not None:
             sample = self.transform(sample)
         label = record['label']
-        print(sample, label)
+        # print(sample, label)
         return sample, label
 
 transform = transforms.Compose([
@@ -105,6 +105,7 @@ test_dataloader = DataLoader(
 
 for layer in exit_layers:
     layer.force_forward()
+    # layer.force_exit()
 
 for X, y in train_dataloader:
     y_hat, exits = model(X)
