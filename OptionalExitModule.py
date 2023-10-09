@@ -13,6 +13,7 @@ class OptionalExitModule(nn.Module):
         self.classifier = None
         self.take_exit = None
         self.exit_idx = []
+        self.early_y = None
 
     def force_forward(self, should_force_forward=True):
         assert not (should_force_forward and self.should_force_exit)
@@ -22,6 +23,8 @@ class OptionalExitModule(nn.Module):
         self.should_force_exit = should_force_exit
 
     def forward(self, X):
+
+        self.early_y = None
 
         if self.should_force_forward:
             return self.module(X)
@@ -44,19 +47,16 @@ class OptionalExitModule(nn.Module):
         self.exit_idx = torch.where(exit_mask)[0]
         num_exits = len(self.exit_idx)
 
-        y = torch.empty((batch_size, self.num_outputs))
-
         if num_exits > 0:
+            print('taking', num_exits, 'exits')
             X_classify = X_flat[exit_mask]
             y_classify = self.classifier(X_classify)
-            y[exit_mask] = y_classify
+            self.early_y = y_classify
 
-        if num_exits < batch_size:
-            X_forward = X[~exit_mask]
-            y_forward = self.module(X_forward)
-            y[~exit_mask] = y_forward
+        if num_exits == batch_size:
+            raise Exception("All Early Exited")
 
-        return y
+        return X[~exit_mask]
 
 
 

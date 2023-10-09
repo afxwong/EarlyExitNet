@@ -28,15 +28,14 @@ class EarlyExitModel(nn.Module):
         return optional_exit_module
 
     def forward(self, X):
-        y_hat = self.model(X)
-        remaining_idx = torch.arange(len(X))
-        exit_ids_taken = torch.ones(len(X)) * len(self.exit_modules)
-        # for i, exit_module in enumerate(self.exit_modules):
-        #     exit_idx = exit_module.exit_idx
-        #     original_idx = remaining_idx[exit_idx]
-        #     exit_ids_taken[original_idx] = i
-
-        return y_hat, exit_ids_taken
+        try:
+            last_layer_y_hat = self.model(X)
+        except Exception as e:
+            if str(e).startswith('All Early Exited'):
+                pass
+            else:
+                raise e
+        return last_layer_y_hat
 
 
 
