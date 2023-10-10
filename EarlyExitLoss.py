@@ -13,11 +13,20 @@ class EarlyExitWeightedLoss(nn.Module):
 
         # Calculate the loss for each example
         losses = self.loss(predictions, targets)
-
+        
         # Apply scaling to the loss for each example
         if shouldWeight:
+            # Calculate the predicted class for each sample (row) in predictions
+            predicted_classes = torch.argmax(predictions, dim=1)
+
+            # Compare the predicted classes with the target classes
+            correct_predictions = predicted_classes.eq(targets)
+            
             # Calculate the scaling factor for each example
             scalars = (exit_points+1) / self.total_exit_points
+            
+            # invert scalars if the prediction is incorrect
+            scalars[~correct_predictions] = scalars[~correct_predictions].reciprocal()
             
             # Multiply each example's loss by its scaling factor
             losses = losses * scalars

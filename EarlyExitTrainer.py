@@ -1,5 +1,6 @@
 import torch
 from EarlyExitLoss import EarlyExitWeightedLoss
+from tqdm import tqdm
 
 class EarlyExitTrainer:
     def __init__(self, model, device):
@@ -8,22 +9,63 @@ class EarlyExitTrainer:
         self.loss_function = EarlyExitWeightedLoss(total_exit_points=len(model.exit_modules)+1)
         
         # create map for output -> proper class
-        self.map = {}
+        self.map = {
+            0: 0,
+            217: 1,
+            482: 2,
+            491: 3,
+            497: 4,
+            566: 5,
+            569: 6,
+            571: 7,
+            574: 8,
+            701: 9,
+            
+        }
 
     def train_epoch(self, train_loader, optimizer, epoch, validation_loader=None, shouldWeight=True):
         self.model.train()
-        for i, (X, y) in enumerate(train_loader):
+        
+        net_loss = 0.0
+        net_accuracy = 0.0
+        
+        validation_loss = None
+        validation_accuracy = None
+        
+        progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
+        
+        for i, (X, y) in enumerate(progress_bar):
             X = X.to(self.device)
             y = y.to(self.device)
 
             optimizer.zero_grad()
             y_hat, exit_points = self.model(X)
-            loss = self.calculate_loss(y_hat, y, exit_points, shouldWeight=False)
+            
+            # Get only the classes that are in the dataset, since the model outputs 1000 classes and data is 
+            shortened_yhat = self.calculate_proper_classes(y_hat)
+            
+            loss = self.calculate_loss(shortened_yhat, y, exit_points, shouldWeight=shouldWeight)
+            accuracy = self.calculate_accuracy(shortened_yhat, y)
+            
+            net_loss += loss.item()
+            net_accuracy += accuracy
+            
+            # print(f'Epoch {epoch} Batch {i} Loss {loss.item()}')
+            # print(f'Epoch {epoch} Batch {i} accuracy {accuracy}')
 
-            loss.backward()
+            try:
+                loss.backward()
+            except RuntimeError as e:
+                # we need to catch the case where we try to autograd back through the frozen model
+                if "does not require grad and does not have a grad_fn" in str(e):
+                    pass
             optimizer.step()
-            print(f'Epoch {epoch} Batch {i} Loss {loss.item()}')
-            print(f'Epoch {epoch} Batch {i} accuracy {self.calculate_accuracy(y_hat, y)}')
+            
+            # Update and display the progress bar at the end of each epoch
+            progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
+        
+        print(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
+        print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
             
 
         # Optionally, calculate validation loss
@@ -31,8 +73,12 @@ class EarlyExitTrainer:
             validation_loss, validation_accuracy = self.validate(validation_loader)
             print(f'Epoch {epoch} Validation Loss {validation_loss}')
             print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+            
+        progress_bar.close()
+            
+        return net_loss / len(train_loader), net_accuracy / len(train_loader), validation_loss, validation_accuracy
                 
-    def train(self, train_loader, optimizer, epoch_count, validation_loader=None):
+    def train(self, train_loader, optimizer, epoch_count=1, validation_loader=None):
         # iterate through epochs for each classification head
         for layer_idx, layer in enumerate(self.model.exit_modules):
             
@@ -41,7 +87,7 @@ class EarlyExitTrainer:
                 tmp_layer.force_forward(False)
                 tmp_layer.force_exit(False)
                 
-            print(f'Training early exit layer {layer}')
+            print(f'Training early exit layer {layer_idx+1}')
             layer.force_forward(False)
             layer.force_exit()
            
@@ -66,10 +112,17 @@ class EarlyExitTrainer:
             
         for epoch in range(epoch_count):
             print(f'Beginning epoch {epoch} with no forced exits')
-            self.train_epoch(train_loader, optimizer, epoch, validation_loader, shouldWeight=True)
+            loss, accuracy, validation_loss, validation_accuracy = self.train_epoch(train_loader, optimizer, epoch, validation_loader, shouldWeight=True)
+            
         
                
-    # def calculate_proper_classes(self, y_hat):
+    def calculate_proper_classes(self, y_hat):
+        # TODO: replace this with transfer learning on resnet to get the proper classes
+        relevant_indices = list(self.map.keys())
+        
+        # Index into the y_hat tensor to get the relevant values
+        yhat_relevant = y_hat[:, relevant_indices]
+        return yhat_relevant
             
 
     def calculate_loss(self, y_hat, y, exit_points, shouldWeight=True):
@@ -88,8 +141,11 @@ class EarlyExitTrainer:
                 X_val = X_val.to(self.device)
                 y_val = y_val.to(self.device)
                 y_hat_val, exit_points = self.model(X_val)
-                val_loss = self.calculate_loss(y_hat_val, y_val, exit_points)
-                val_accuracy = self.calculate_accuracy(y_hat_val, y_val)
+                
+                y_hat_val_shortened = self.calculate_proper_classes(y_hat_val)
+                
+                val_loss = self.calculate_loss(y_hat_val_shortened, y_val, exit_points)
+                val_accuracy = self.calculate_accuracy(y_hat_val_shortened, y_val)
                 total_loss += val_loss.item()
                 total_accuracy += val_accuracy
         return total_loss / len(validation_loader), total_accuracy / len(validation_loader)
