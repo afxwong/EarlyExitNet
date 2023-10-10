@@ -38,7 +38,7 @@ class OptionalExitModule(nn.Module):
         if self.should_force_forward:
             return self.module(X)
 
-        X_flat = torch.flatten(X, start_dim=1)
+        X_flat = torch.flatten(X, start_dim=1).to(current_device)
         batch_size, flat_size = X_flat.shape
 
         # Create exit gate and classifier at runtime to adapt to module input size
@@ -50,7 +50,7 @@ class OptionalExitModule(nn.Module):
         if self.should_force_exit:
             self.take_exit = torch.ones((batch_size,), device=current_device)
         else:
-            self.take_exit = torch.flatten(self.exit_gate(X_flat))
+            self.take_exit = torch.flatten(self.exit_gate(X_flat)).to(current_device)
 
         exit_mask = self.take_exit > 0
         self.exit_idx = torch.where(exit_mask)[0]

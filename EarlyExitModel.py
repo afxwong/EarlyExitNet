@@ -6,12 +6,13 @@ from OptionalExitModule import OptionalExitModule
 
 class EarlyExitModel(nn.Module):
 
-    def __init__(self, model, num_outputs):
+    def __init__(self, model, num_outputs, device):
         super(EarlyExitModel, self).__init__()
         self.model = model
         self.num_outputs = num_outputs
         self.exit_modules = []
         self.original_modules = {}
+        self.device = device
 
 
     def clear_exits(self):
@@ -35,9 +36,9 @@ class EarlyExitModel(nn.Module):
         except Exception as e:
             if not isinstance(e, EarlyExitException):
                 raise e
-        y_hat = torch.empty((len(X), self.num_outputs))
-        exit_points = torch.ones(len(X)) * len(self.exit_modules)
-        idx = torch.arange(len(X))
+        y_hat = torch.empty((len(X), self.num_outputs), device=self.device)
+        exit_points = torch.ones(len(X), device=self.device) * len(self.exit_modules)
+        idx = torch.arange(len(X)).to(self.device)
         for i, exit_module in enumerate(self.exit_modules):
             if len(idx) == 0:
                 break
@@ -46,7 +47,7 @@ class EarlyExitModel(nn.Module):
             original_idx = idx[exit_module.exit_idx]
             y_hat[original_idx] = exit_module.early_y
             exit_points[original_idx] = i
-            keep_mask = torch.ones(idx.shape, dtype=torch.bool)
+            keep_mask = torch.ones(idx.shape, dtype=torch.bool, device=self.device)
             keep_mask[exit_module.exit_idx] = False
             idx = idx[keep_mask]
         if last_layer_y_hat is not None:
