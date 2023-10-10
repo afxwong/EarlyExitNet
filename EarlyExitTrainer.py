@@ -56,7 +56,8 @@ class EarlyExitTrainer:
             try:
                 loss.backward()
             except RuntimeError as e:
-                # we need to catch the case where we try to autograd back through the frozen model
+                # Catch the exception thrown if we don't actually train anything but still try to backprop
+                # This stems from if we don't end up doing transfer learning on the resnet model
                 if "does not require grad and does not have a grad_fn" in str(e):
                     pass
             optimizer.step()
