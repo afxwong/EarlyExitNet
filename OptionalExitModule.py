@@ -8,8 +8,11 @@ class OptionalExitModule(nn.Module):
         assert not (force_forward and force_exit)
         super(OptionalExitModule, self).__init__()
         self.module = module
+        
         self.should_force_forward = force_forward
         self.should_force_exit = force_exit
+        self.should_freeze_classifier = False
+       
         self.num_outputs = num_outputs
         self.exit_gate = None
         self.classifier = None
@@ -25,9 +28,15 @@ class OptionalExitModule(nn.Module):
         assert not (self.should_force_forward and should_force_exit)
         self.should_force_exit = should_force_exit
         
+    def freeze_classifier(self, should_freeze_classifier=True):
+        self.should_freeze_classifier = should_freeze_classifier
+        # note: specifically not freezing the classifier params since this breaks loss.backward call
+        # this is handled by zeroing out the gradients in the forward method
+        
     def remove_forces(self):
         self.force_forward(False)
         self.force_exit(False)
+        self.freeze_classifier(False)
 
     def forward(self, X):
         # Check the device of input tensor X and move necessary components to the same device
@@ -53,6 +62,8 @@ class OptionalExitModule(nn.Module):
             nn.init.uniform_(self.exit_gate.weight, -0.01, 0.01)
         if self.classifier is None:
             self.classifier = nn.Linear(flat_size, self.num_outputs).to(current_device)
+            self.freeze_classifier(self.should_freeze_classifier)  # make sure it is frozen if it should be
+
         if self.should_force_exit:
             self.take_exit = torch.ones((batch_size,), device=current_device)
         else:
@@ -64,15 +75,20 @@ class OptionalExitModule(nn.Module):
 
         if num_exits > 0:
             X_classify = X_flat[exit_mask]
-            y_classify = self.classifier(X_classify)
+
+            if self.should_freeze_classifier:
+                # Use torch.no_grad() to temporarily disable gradient computation for the classifier
+                with torch.no_grad():
+                    y_classify = self.classifier(X_classify)
+                
+                # delete the grads to ensure they are not optimized when frozen
+                for param in self.classifier.parameters():
+                    param.grad = None
+            else:
+                y_classify = self.classifier(X_classify)
             self.early_y = y_classify
 
         if num_exits == batch_size:
             raise EarlyExitException()
 
         return self.module(X[~exit_mask])
-
-
-
-
-

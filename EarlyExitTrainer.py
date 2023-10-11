@@ -2,7 +2,7 @@ import torch
 from EarlyExitLoss import EarlyExitWeightedLoss
 from tqdm import tqdm
 
-class EarlyExitTrainer:
+class ModelTrainer:
     def __init__(self, model, device):
         self.model = model
         self.device = device
@@ -40,12 +40,18 @@ class EarlyExitTrainer:
         progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
         for i, (X, y) in enumerate(progress_bar):
-            optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
             X = X.to(self.device)
             y = y.to(self.device)
+            y_hat, exit_points = self.model(X)
+            
+            non_frozen_params = list(filter(lambda p: p.requires_grad, self.model.parameters()))
+            for exit_module in self.model.exit_modules:
+                if not exit_module.should_freeze_classifier or exit_module.exit_gate is None: continue
+                # add the parameters of the exit module to the list of non-frozen parameters
+                non_frozen_params += list(filter(lambda p: p.requires_grad, exit_module.exit_gate.parameters()))
+            optimizer = torch.optim.Adam(non_frozen_params, lr=0.001)
             
             optimizer.zero_grad()
-            y_hat, exit_points = self.model(X)
             
             # Get only the classes that are in the dataset, since the model outputs 1000 classes and data is 
             shortened_yhat = self.calculate_proper_classes(y_hat)
@@ -55,6 +61,13 @@ class EarlyExitTrainer:
             
             net_loss += loss.item()
             net_accuracy += accuracy
+            
+            # Print tensors in the autograd graph
+            print("Num tensors in autograd graph: ", len(torch.autograd.grad(loss, y_hat, retain_graph=True, create_graph=True)))
+            for i, variable in enumerate(torch.autograd.backward(y_hat, grad_tensors=y_hat.data, retain_graph=True, create_graph=True)):
+                print(f"Variable {i} (requires_grad): {variable.requires_grad}")
+                print(f"Data:\n{variable.data}")
+                print('-' * 40)
 
             loss.backward()
             optimizer.step()
@@ -78,35 +91,35 @@ class EarlyExitTrainer:
         losses = []
         accuracies = []
         
-        # iterate through epochs for each classification head
-        for layer_idx, layer in enumerate(self.model.exit_modules):
-            # reset the model
-            for tmp_layer_idx, tmp_layer in enumerate(self.model.exit_modules):
-                tmp_layer.remove_forces()
+        # # iterate through epochs for each classification head
+        # for layer_idx, layer in enumerate(self.model.exit_modules):
+        #     # reset the model
+        #     for tmp_layer_idx, tmp_layer in enumerate(self.model.exit_modules):
+        #         tmp_layer.remove_forces()
                 
-            print(f'Training early exit layer {layer_idx+1}')
-            layer.force_exit()
+        #     print(f'Training early exit layer {layer_idx+1}')
+        #     layer.force_exit()
            
-            for epoch in range(epoch_count):
-                # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
-                if len(losses) > 3 and len(accuracies) > 3:
-                    if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
-                        print('Model is overfitting, stopping early')
-                        break
+        #     for epoch in range(epoch_count):
+        #         # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
+        #         if len(losses) > 3 and len(accuracies) > 3:
+        #             if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
+        #                 print('Model is overfitting, stopping early')
+        #                 break
                 
-                print(f'Beginning epoch {epoch}')
-                test_loader = validation_loader if epoch % 5 == 0 else None
-                loss, acc, _, _ = self.train_epoch(train_loader, epoch, test_loader, shouldWeight=False)
+        #         print(f'Beginning epoch {epoch}')
+        #         test_loader = validation_loader if epoch % 5 == 0 else None
+        #         loss, acc, _, _ = self.train_epoch(train_loader, epoch, test_loader, shouldWeight=False)
                 
-                losses.append(loss)
-                accuracies.append(acc)
+        #         losses.append(loss)
+        #         accuracies.append(acc)
         
         # now we need to train the full model
         losses = []
         accuracies = []
         for layer in self.model.exit_modules:
             layer.remove_forces()
-            # TODO: figure out how to freeze the classifier layers without breaking loss function
+            layer.freeze_classifier()
             # TODO: make sure weights are being updated by loss and optimizer
             
         for epoch in range(epoch_count):
@@ -132,7 +145,6 @@ class EarlyExitTrainer:
             
 
     def calculate_loss(self, y_hat, y, exit_points, shouldWeight=True):
-        # TODO: calculate loss
         return self.loss_function(y_hat, y, exit_points, shouldWeight=shouldWeight)
     
     def calculate_accuracy(self, y_hat, y):
