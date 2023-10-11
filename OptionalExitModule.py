@@ -24,6 +24,10 @@ class OptionalExitModule(nn.Module):
     def force_exit(self, should_force_exit=True):
         assert not (self.should_force_forward and should_force_exit)
         self.should_force_exit = should_force_exit
+        
+    def remove_forces(self):
+        self.force_forward(False)
+        self.force_exit(False)
 
     def forward(self, X):
         # Check the device of input tensor X and move necessary components to the same device
@@ -44,9 +48,11 @@ class OptionalExitModule(nn.Module):
         # Create exit gate and classifier at runtime to adapt to module input size
         if self.exit_gate is None:
             self.exit_gate = nn.Linear(flat_size, 1).to(current_device)
+            self.exit_gate.weight.requires_grad = True  # Set requires_grad to True for weights
+            self.exit_gate.bias.requires_grad = True    # Set requires_grad to True for bias
+            nn.init.uniform_(self.exit_gate.weight, -0.01, 0.01)
         if self.classifier is None:
             self.classifier = nn.Linear(flat_size, self.num_outputs).to(current_device)
-
         if self.should_force_exit:
             self.take_exit = torch.ones((batch_size,), device=current_device)
         else:

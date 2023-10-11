@@ -23,7 +23,7 @@ class EarlyExitTrainer:
             
         }
 
-    def train_epoch(self, train_loader, optimizer, epoch, validation_loader=None, shouldWeight=True):
+    def train_epoch(self, train_loader, epoch, validation_loader=None, shouldWeight=True):
         self.model.train()
         
         net_loss = 0.0
@@ -35,9 +35,10 @@ class EarlyExitTrainer:
         progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
         for i, (X, y) in enumerate(progress_bar):
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
             X = X.to(self.device)
             y = y.to(self.device)
-
+            
             optimizer.zero_grad()
             y_hat, exit_points = self.model(X)
             
@@ -49,17 +50,8 @@ class EarlyExitTrainer:
             
             net_loss += loss.item()
             net_accuracy += accuracy
-            
-            # print(f'Epoch {epoch} Batch {i} Loss {loss.item()}')
-            # print(f'Epoch {epoch} Batch {i} accuracy {accuracy}')
 
-            try:
-                loss.backward()
-            except RuntimeError as e:
-                # Catch the exception thrown if we don't actually train anything but still try to backprop
-                # This stems from if we don't end up doing transfer learning on the resnet model
-                if "does not require grad and does not have a grad_fn" in str(e):
-                    pass
+            loss.backward()
             optimizer.step()
             
             # Update and display the progress bar at the end of each epoch
@@ -79,41 +71,33 @@ class EarlyExitTrainer:
             
         return net_loss / len(train_loader), net_accuracy / len(train_loader), validation_loss, validation_accuracy
                 
-    def train(self, train_loader, optimizer, epoch_count=1, validation_loader=None):
+    def train(self, train_loader, epoch_count=1, validation_loader=None):
         # iterate through epochs for each classification head
         for layer_idx, layer in enumerate(self.model.exit_modules):
             
             # reset the model
             for tmp_layer_idx, tmp_layer in enumerate(self.model.exit_modules):
-                tmp_layer.force_forward(False)
-                tmp_layer.force_exit(False)
+                tmp_layer.remove_forces()
                 
             print(f'Training early exit layer {layer_idx+1}')
-            layer.force_forward(False)
             layer.force_exit()
            
             for epoch in range(epoch_count):
                 print(f'Beginning epoch {epoch}')
-                self.train_epoch(train_loader, optimizer, epoch, shouldWeight=False)
-                
-        # now we need to train the last layer by forcing all other layers to continue
+                self.train_epoch(train_loader, epoch, shouldWeight=False)
+        
+        # now we need to train only the gate layers
         for layer in self.model.exit_modules:
-            layer.force_forward()
-            layer.force_exit(False)
-        
-        for epoch in range(epoch_count):
-            print(f'Beginning epoch {epoch} with no forced exits')
-            self.train_epoch(train_loader, optimizer, epoch, validation_loader, shouldWeight=False)
-        
-        
-        # now we need to train the entire model with nothing forced
-        for layer in self.model.exit_modules:
-            layer.force_forward(False)
-            layer.force_exit(False)
+            layer.remove_forces()
             
         for epoch in range(epoch_count):
             print(f'Beginning epoch {epoch} with no forced exits')
-            loss, accuracy, validation_loss, validation_accuracy = self.train_epoch(train_loader, optimizer, epoch, validation_loader, shouldWeight=True)
+            
+            test_loader = validation_loader if epoch % 5 == 0 else None
+            loss, accuracy, validation_loss, validation_accuracy = self.train_epoch(train_loader, epoch, test_loader, shouldWeight=True)
+            
+            for layer in self.model.exit_modules:
+                print(f'Layer exit gate weights: {layer.exit_gate.weight}')
             
         
                
