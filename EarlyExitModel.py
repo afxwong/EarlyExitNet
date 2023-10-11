@@ -30,6 +30,7 @@ class EarlyExitModel(nn.Module):
         return optional_exit_module
 
     def forward(self, X):
+        # TODO: make the exit points start as the last layer of the model
         last_layer_y_hat = None
         try:
             last_layer_y_hat = self.model(X)
