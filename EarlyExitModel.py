@@ -37,6 +37,7 @@ class EarlyExitModel(nn.Module):
             if not isinstance(e, EarlyExitException):
                 raise e
         y_hat = torch.empty((len(X), self.num_outputs), device=self.device)
+        exit_gate_logits = torch.empty((len(X), 1), device=self.device)
         exit_points = torch.ones(len(X), device=self.device) * len(self.exit_modules)
         idx = torch.arange(len(X)).to(self.device)
         for i, exit_module in enumerate(self.exit_modules):
@@ -46,14 +47,17 @@ class EarlyExitModel(nn.Module):
                 continue
             original_idx = idx[exit_module.exit_idx]
             y_hat[original_idx] = exit_module.early_y
+            exit_gate_logits[original_idx] = exit_module.should_exit_results
             exit_points[original_idx] = i
             keep_mask = torch.ones(idx.shape, dtype=torch.bool, device=self.device)
             keep_mask[exit_module.exit_idx] = False
             idx = idx[keep_mask]
         if last_layer_y_hat is not None:
             y_hat[idx] = last_layer_y_hat
+            # set infinity for exit gate logits so that they are tanh back to 1
+            exit_gate_logits[idx] = float('inf')
 
-        return y_hat, exit_points
+        return y_hat, exit_points, exit_gate_logits
 
 
 

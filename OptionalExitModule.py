@@ -19,6 +19,7 @@ class OptionalExitModule(nn.Module):
         self.take_exit = None
         self.exit_idx = []
         self.early_y = None
+        self.should_exit_results = None
 
     def force_forward(self, should_force_forward=True):
         assert not (should_force_forward and self.should_force_exit)
@@ -47,6 +48,7 @@ class OptionalExitModule(nn.Module):
             self.classifier.to(current_device)
 
         self.early_y = None
+        self.should_exit_results = None
 
         if self.should_force_forward:
             return self.module(X)
@@ -57,9 +59,6 @@ class OptionalExitModule(nn.Module):
         # Create exit gate and classifier at runtime to adapt to module input size
         if self.exit_gate is None:
             self.exit_gate = nn.Linear(flat_size, 1).to(current_device)
-            self.exit_gate.weight.requires_grad = True  # Set requires_grad to True for weights
-            self.exit_gate.bias.requires_grad = True    # Set requires_grad to True for bias
-            nn.init.uniform_(self.exit_gate.weight, -0.01, 0.01)
         if self.classifier is None:
             self.classifier = nn.Linear(flat_size, self.num_outputs).to(current_device)
             self.freeze_classifier(self.should_freeze_classifier)  # make sure it is frozen if it should be
@@ -68,13 +67,17 @@ class OptionalExitModule(nn.Module):
             self.take_exit = torch.ones((batch_size,), device=current_device)
         else:
             self.take_exit = torch.flatten(self.exit_gate(X_flat)).to(current_device)
-
+        
         exit_mask = self.take_exit > 0
         self.exit_idx = torch.where(exit_mask)[0]
         num_exits = len(self.exit_idx)
 
         if num_exits > 0:
             X_classify = X_flat[exit_mask]
+            gate_results = self.take_exit[exit_mask]
+            
+            # store off this value for use in the loss function
+            self.should_exit_results = torch.reshape(gate_results, (-1, 1))
 
             if self.should_freeze_classifier:
                 # Use torch.no_grad() to temporarily disable gradient computation for the classifier

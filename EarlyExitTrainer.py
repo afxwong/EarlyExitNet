@@ -42,32 +42,21 @@ class ModelTrainer:
         for i, (X, y) in enumerate(progress_bar):
             X = X.to(self.device)
             y = y.to(self.device)
-            y_hat, exit_points = self.model(X)
+            y_hat, exit_points, gate_logits = self.model(X)
             
-            non_frozen_params = list(filter(lambda p: p.requires_grad, self.model.parameters()))
-            for exit_module in self.model.exit_modules:
-                if not exit_module.should_freeze_classifier or exit_module.exit_gate is None: continue
-                # add the parameters of the exit module to the list of non-frozen parameters
-                non_frozen_params += list(filter(lambda p: p.requires_grad, exit_module.exit_gate.parameters()))
-            optimizer = torch.optim.Adam(non_frozen_params, lr=0.001)
+            trainable_params = filter(lambda p: p.requires_grad, self.model.parameters())
+            optimizer = torch.optim.Adam(trainable_params, lr=0.001)
             
             optimizer.zero_grad()
             
             # Get only the classes that are in the dataset, since the model outputs 1000 classes and data is 
-            shortened_yhat = self.calculate_proper_classes(y_hat)
+            shortened_yhat = y_hat #self.calculate_proper_classes(y_hat)
             
-            loss = self.calculate_loss(shortened_yhat, y, exit_points, shouldWeight=shouldWeight)
+            loss = self.calculate_loss(shortened_yhat, y, exit_points, gate_logits, shouldWeight=shouldWeight)
             accuracy = self.calculate_accuracy(shortened_yhat, y)
             
             net_loss += loss.item()
             net_accuracy += accuracy
-            
-            # Print tensors in the autograd graph
-            print("Num tensors in autograd graph: ", len(torch.autograd.grad(loss, y_hat, retain_graph=True, create_graph=True)))
-            for i, variable in enumerate(torch.autograd.backward(y_hat, grad_tensors=y_hat.data, retain_graph=True, create_graph=True)):
-                print(f"Variable {i} (requires_grad): {variable.requires_grad}")
-                print(f"Data:\n{variable.data}")
-                print('-' * 40)
 
             loss.backward()
             optimizer.step()
@@ -88,31 +77,52 @@ class ModelTrainer:
         return net_loss / len(train_loader), net_accuracy / len(train_loader), validation_loss, validation_accuracy
                 
     def train(self, train_loader, epoch_count=1, validation_loader=None):
+       
+        # iterate through epochs for each classification head
+        for layer_idx, layer in enumerate(self.model.exit_modules):
+            losses = []
+            accuracies = []
+        
+            # reset the model
+            for tmp_layer_idx, tmp_layer in enumerate(self.model.exit_modules):
+                tmp_layer.remove_forces()
+                
+            print(f'Training early exit layer {layer_idx+1}')
+            layer.force_exit()
+           
+            for epoch in range(epoch_count):
+                # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
+                if len(losses) > 20 and len(accuracies) > 20:
+                    if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
+                        print('Model is overfitting, stopping early')
+                        break
+                
+                print(f'Beginning epoch {epoch}')
+                loss, acc, val_loss, val_acc = self.train_epoch(train_loader, epoch, validation_loader, shouldWeight=False)
+                
+                losses.append(val_loss)
+                accuracies.append(val_acc)
+        
+        # now we need to train the last classifier head
         losses = []
         accuracies = []
+        for layer in self.model.exit_modules:
+            layer.remove_forces()
+            layer.force_forward()
+            
+        for epoch in range(epoch_count):
+            # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
+            if len(losses) > 20 and len(accuracies) > 20:
+                if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
+                    print('Model is overfitting, stopping early')
+                    break
+                
+            print(f'Beginning epoch {epoch} on final classifier head')
+            loss, acc, val_loss, val_acc = self.train_epoch(train_loader, epoch, validation_loader, shouldWeight=False)
+                
+            losses.append(val_loss)
+            accuracies.append(val_acc)
         
-        # # iterate through epochs for each classification head
-        # for layer_idx, layer in enumerate(self.model.exit_modules):
-        #     # reset the model
-        #     for tmp_layer_idx, tmp_layer in enumerate(self.model.exit_modules):
-        #         tmp_layer.remove_forces()
-                
-        #     print(f'Training early exit layer {layer_idx+1}')
-        #     layer.force_exit()
-           
-        #     for epoch in range(epoch_count):
-        #         # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
-        #         if len(losses) > 3 and len(accuracies) > 3:
-        #             if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
-        #                 print('Model is overfitting, stopping early')
-        #                 break
-                
-        #         print(f'Beginning epoch {epoch}')
-        #         test_loader = validation_loader if epoch % 5 == 0 else None
-        #         loss, acc, _, _ = self.train_epoch(train_loader, epoch, test_loader, shouldWeight=False)
-                
-        #         losses.append(loss)
-        #         accuracies.append(acc)
         
         # now we need to train the full model
         losses = []
@@ -120,11 +130,10 @@ class ModelTrainer:
         for layer in self.model.exit_modules:
             layer.remove_forces()
             layer.freeze_classifier()
-            # TODO: make sure weights are being updated by loss and optimizer
             
         for epoch in range(epoch_count):
-             # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
-            if len(losses) > 3 and len(accuracies) > 3:
+            # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
+            if len(losses) > 20 and len(accuracies) > 20:
                 if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
                     print('Model is overfitting, stopping early')
                     break
@@ -132,8 +141,11 @@ class ModelTrainer:
             print(f'Beginning epoch {epoch} with no forced exits')
             loss, acc, validation_loss, validation_accuracy = self.train_epoch(train_loader, epoch, validation_loader, shouldWeight=True)
             
-            losses.append(loss)
-            accuracies.append(acc)
+            losses.append(validation_loss)
+            accuracies.append(validation_accuracy)
+            
+            # save the model
+            torch.save(self.model.state_dict(), f'models/model_{epoch}.pt')
                
     def calculate_proper_classes(self, y_hat):
         # TODO: replace this with transfer learning on resnet to get the proper classes
@@ -144,8 +156,8 @@ class ModelTrainer:
         return yhat_relevant
             
 
-    def calculate_loss(self, y_hat, y, exit_points, shouldWeight=True):
-        return self.loss_function(y_hat, y, exit_points, shouldWeight=shouldWeight)
+    def calculate_loss(self, y_hat, y, exit_points, confidences, shouldWeight=True):
+        return self.loss_function(y_hat, y, exit_points, confidences, shouldWeight=shouldWeight)
     
     def calculate_accuracy(self, y_hat, y):
         return torch.argmax(y_hat, dim=1).eq(y).sum().item() / len(y)
@@ -159,11 +171,11 @@ class ModelTrainer:
             for X_val, y_val in validation_loader:
                 X_val = X_val.to(self.device)
                 y_val = y_val.to(self.device)
-                y_hat_val, exit_points = self.model(X_val)
+                y_hat_val, exit_points, gate_logits = self.model(X_val)
                 
-                y_hat_val_shortened = self.calculate_proper_classes(y_hat_val)
+                y_hat_val_shortened = y_hat_val #self.calculate_proper_classes(y_hat_val)
                 
-                val_loss = self.calculate_loss(y_hat_val_shortened, y_val, exit_points)
+                val_loss = self.calculate_loss(y_hat_val_shortened, y_val, exit_points, gate_logits)
                 val_accuracy = self.calculate_accuracy(y_hat_val_shortened, y_val)
                 total_loss += val_loss.item()
                 total_accuracy += val_accuracy

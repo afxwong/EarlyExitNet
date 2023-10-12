@@ -7,7 +7,7 @@ class EarlyExitWeightedLoss(nn.Module):
         self.total_exit_points = total_exit_points
         self.loss = nn.CrossEntropyLoss()
 
-    def forward(self, predictions, targets, exit_points, shouldWeight=True):
+    def forward(self, predictions, targets, exit_points, confidences, shouldWeight=True):
         # Convert targets to long data type
         targets = targets.long()
 
@@ -28,8 +28,11 @@ class EarlyExitWeightedLoss(nn.Module):
             # invert scalars if the prediction is incorrect
             scalars[~correct_predictions] = scalars[~correct_predictions].reciprocal()
             
+            # convert confidences to be range [-1, 1], then negate
+            reduced_confidences = -1 * torch.tanh(confidences)
+            
             # Multiply each example's loss by its scaling factor
-            losses = losses * scalars
+            losses = losses * scalars + reduced_confidences
 
         # Take the mean of the weighted losses across all examples
         weighted_loss = torch.mean(losses)
