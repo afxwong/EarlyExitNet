@@ -1,12 +1,13 @@
 import torch
-from EarlyExitLoss import EarlyExitWeightedLoss
+from torch import nn
 from tqdm import tqdm
+import os
 
 class ModelTrainer:
     def __init__(self, model, device):
         self.model = model
         self.device = device
-        self.loss_function = EarlyExitWeightedLoss(total_exit_points=len(model.exit_modules)+1)
+        self.loss_function = nn.CrossEntropyLoss()
         
         # create map for output -> proper class
         self.map = {
@@ -22,6 +23,53 @@ class ModelTrainer:
             701: 9,
             
         }
+    
+    def train_gate_layers(self, train_loader, epoch, validation_loader=None, shouldWeight=True):
+        try:
+            # Clear the cache to prevent memory leaks
+            torch.cuda.empty_cache()
+        except:
+            pass   
+        self.model.train()
+        
+        net_accuracy = 0.0
+        
+        validation_loss = None
+        validation_accuracy = None
+        
+        progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
+        
+        for i, (X, y) in enumerate(progress_bar):
+            X = X.to(self.device)
+            y = y.to(self.device)
+            y_hat, _, _ = self.model(X)
+            
+            accuracy = self.calculate_accuracy(y_hat, y)
+            
+            # Optimize/backprop each of the gate layers
+            for exit_layer, original_idx in zip(self.model.exit_modules, self.model.original_idx_per_exit_module):
+                if original_idx is None or len(original_idx) == 0: continue
+                exit_layer.optimize_gate_layer(y_hat, y, original_idx)
+            
+            net_accuracy += accuracy
+            
+            # Update and display the progress bar at the end of each epoch
+            progress_bar.set_postfix({"Accuracy": accuracy})
+        
+            # TODO: remove this
+            if i == 5: break
+        print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
+            
+
+        # # Optionally, calculate validation loss
+        # if validation_loader is not None:
+        #     validation_loss, validation_accuracy, _ = self.validate(validation_loader)
+        #     print(f'Epoch {epoch} Validation Loss {validation_loss}')
+        #     print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+            
+        return net_accuracy / len(train_loader), validation_loss, validation_accuracy
+        
+        
 
     def train_epoch(self, train_loader, epoch, validation_loader=None, shouldWeight=True):
         try:
@@ -45,7 +93,7 @@ class ModelTrainer:
             y_hat, exit_points, gate_logits = self.model(X)
             
             trainable_params = filter(lambda p: p.requires_grad, self.model.parameters())
-            optimizer = torch.optim.Adam(trainable_params, lr=0.001)
+            optimizer = torch.optim.Adam(trainable_params, lr=0.0001)
             
             optimizer.zero_grad()
             
@@ -63,6 +111,9 @@ class ModelTrainer:
             
             # Update and display the progress bar at the end of each epoch
             progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
+            
+            # TODO: remove this
+            if i == 5: break
         
         print(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
         print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
@@ -92,7 +143,7 @@ class ModelTrainer:
            
             for epoch in range(epoch_count):
                 # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
-                if len(losses) > 20 and len(accuracies) > 20:
+                if len(losses) > 10 and len(accuracies) > 10:
                     if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
                         print('Model is overfitting, stopping early')
                         break
@@ -112,7 +163,7 @@ class ModelTrainer:
             
         for epoch in range(epoch_count):
             # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
-            if len(losses) > 20 and len(accuracies) > 20:
+            if len(losses) > 10 and len(accuracies) > 10:
                 if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
                     print('Model is overfitting, stopping early')
                     break
@@ -125,7 +176,6 @@ class ModelTrainer:
         
         
         # now we need to train the full model
-        losses = []
         accuracies = []
         for layer in self.model.exit_modules:
             layer.remove_forces()
@@ -133,18 +183,19 @@ class ModelTrainer:
             
         for epoch in range(epoch_count):
             # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
-            if len(losses) > 20 and len(accuracies) > 20:
-                if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
+            if len(accuracies) > 10:
+                if accuracies[-1]< accuracies[-2] < accuracies[-3]:
                     print('Model is overfitting, stopping early')
                     break
                 
             print(f'Beginning epoch {epoch} with no forced exits')
-            loss, acc, validation_loss, validation_accuracy = self.train_epoch(train_loader, epoch, validation_loader, shouldWeight=True)
+            acc, val_loss, val_acc = self.train_gate_layers(train_loader, epoch, validation_loader, shouldWeight=True)
             
-            losses.append(validation_loss)
-            accuracies.append(validation_accuracy)
+            accuracies.append(val_acc)
             
             # save the model
+            if not os.path.exists('models'):
+                os.makedirs('models')
             torch.save(self.model.state_dict(), f'models/model_{epoch}.pt')
                
     def calculate_proper_classes(self, y_hat):
@@ -157,7 +208,7 @@ class ModelTrainer:
             
 
     def calculate_loss(self, y_hat, y, exit_points, confidences, shouldWeight=True):
-        return self.loss_function(y_hat, y, exit_points, confidences, shouldWeight=shouldWeight)
+        return self.loss_function(y_hat, y)
     
     def calculate_accuracy(self, y_hat, y):
         return torch.argmax(y_hat, dim=1).eq(y).sum().item() / len(y)

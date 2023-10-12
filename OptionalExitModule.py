@@ -20,6 +20,8 @@ class OptionalExitModule(nn.Module):
         self.exit_idx = []
         self.early_y = None
         self.should_exit_results = None
+        
+        self.optimizer = None
 
     def force_forward(self, should_force_forward=True):
         assert not (should_force_forward and self.should_force_exit)
@@ -38,6 +40,34 @@ class OptionalExitModule(nn.Module):
         self.force_forward(False)
         self.force_exit(False)
         self.freeze_classifier(False)
+        
+    def optimize_gate_layer(self, y_pred, y, items_took_exit):
+        # if you never used the layer, ignore
+        if self.optimizer is None: return
+        
+        # get the relevant values to look at for this layer
+        y = y[items_took_exit]
+        y_pred = y_pred[items_took_exit]
+        exits_taken = self.take_exit[items_took_exit].clone()
+        
+        # reset the gradients
+        self.optimizer.zero_grad()
+        
+        # do loss based on whether you were correct or not
+        # minimize loss for correct, maximize for incorrect -- make correct ones negative
+        correct_mask = torch.argmax(y_pred, dim=1) == y
+        exits_taken[correct_mask] *= -1
+        
+        # your loss is the sum of the exit gate values
+        # more negative means more correct
+        loss = exits_taken.sum()
+        
+        # only backprop on the exit gate to avoid double counting
+        torch.autograd.backward(loss, inputs=[self.exit_gate.weight, self.exit_gate.bias])
+        self.optimizer.step()
+        
+        # TODO: optionally scale the loss by how incorrect/correct the prediction was
+        
 
     def forward(self, X):
         # Check the device of input tensor X and move necessary components to the same device
@@ -59,9 +89,9 @@ class OptionalExitModule(nn.Module):
         # Create exit gate and classifier at runtime to adapt to module input size
         if self.exit_gate is None:
             self.exit_gate = nn.Linear(flat_size, 1).to(current_device)
+            self.optimizer = torch.optim.Adam(self.exit_gate.parameters(), lr=0.001)
         if self.classifier is None:
             self.classifier = nn.Linear(flat_size, self.num_outputs).to(current_device)
-            self.freeze_classifier(self.should_freeze_classifier)  # make sure it is frozen if it should be
 
         if self.should_force_exit:
             self.take_exit = torch.ones((batch_size,), device=current_device)
