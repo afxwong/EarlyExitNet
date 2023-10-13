@@ -89,7 +89,7 @@ class OptionalExitModule(nn.Module):
         # Create exit gate and classifier at runtime to adapt to module input size
         if self.exit_gate is None:
             self.exit_gate = nn.Linear(flat_size, 1).to(current_device)
-            self.optimizer = torch.optim.Adam(self.exit_gate.parameters(), lr=0.001)
+            self.optimizer = torch.optim.Adam(self.exit_gate.parameters(), lr=0.0001)
         if self.classifier is None:
             self.classifier = nn.Linear(flat_size, self.num_outputs).to(current_device)
 

@@ -56,8 +56,6 @@ class ModelTrainer:
             # Update and display the progress bar at the end of each epoch
             progress_bar.set_postfix({"Accuracy": accuracy})
         
-            # TODO: remove this
-            if i == 5: break
         print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
             
 
@@ -111,9 +109,6 @@ class ModelTrainer:
             
             # Update and display the progress bar at the end of each epoch
             progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
-            
-            # TODO: remove this
-            if i == 5: break
         
         print(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
         print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
@@ -196,7 +191,8 @@ class ModelTrainer:
             # save the model
             if not os.path.exists('models'):
                 os.makedirs('models')
-            torch.save(self.model.state_dict(), f'models/model_{epoch}.pt')
+            if val_acc == max(accuracies):
+                torch.save(self.model.state_dict(), f'models/model_{epoch}.pt')
                
     def calculate_proper_classes(self, y_hat):
         # TODO: replace this with transfer learning on resnet to get the proper classes
