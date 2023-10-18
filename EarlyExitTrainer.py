@@ -137,9 +137,9 @@ class ModelTrainer:
             layer.force_exit()
            
             for epoch in range(epoch_count):
-                # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
+                # bail out early if last 5 validation accuracies are decreasing
                 if len(losses) > 10 and len(accuracies) > 10:
-                    if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
+                    if accuracies[-1]< accuracies[-2] < accuracies[-3] < accuracies[-4] < accuracies[-5]:
                         print('Model is overfitting, stopping early')
                         break
                 
@@ -156,18 +156,10 @@ class ModelTrainer:
             layer.remove_forces()
             layer.force_forward()
             
-        for epoch in range(epoch_count):
-            # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
-            if len(losses) > 10 and len(accuracies) > 10:
-                if losses[-1] > losses[-2] > losses[-3] and accuracies[-1] < accuracies[-3]:
-                    print('Model is overfitting, stopping early')
-                    break
-                
+        # limiting this to 3 epochs since it's all we need
+        for epoch in range(3):
             print(f'Beginning epoch {epoch} on final classifier head')
             loss, acc, val_loss, val_acc = self.train_epoch(train_loader, epoch, validation_loader, shouldWeight=False)
-                
-            losses.append(val_loss)
-            accuracies.append(val_acc)
         
         
         # now we need to train the full model
@@ -177,9 +169,9 @@ class ModelTrainer:
             layer.freeze_classifier()
             
         for epoch in range(epoch_count):
-            # bail out early if last three validation losses are increasing and last three validation accuracies are decreasing
+            # bail out early if last 5 validation accuracies are decreasing
             if len(accuracies) > 10:
-                if accuracies[-1]< accuracies[-2] < accuracies[-3]:
+                if accuracies[-1]< accuracies[-2] < accuracies[-3] < accuracies[-4] < accuracies[-5]:
                     print('Model is overfitting, stopping early')
                     break
                 

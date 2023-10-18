@@ -43,7 +43,7 @@ class OptionalExitModule(nn.Module):
         
     def optimize_gate_layer(self, y_pred, y, items_took_exit):
         # if you never used the layer, ignore
-        if self.optimizer is None: return
+        if self.optimizer is None: return 
         
         # get the relevant values to look at for this layer
         y = y[items_took_exit]
