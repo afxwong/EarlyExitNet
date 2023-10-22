@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 
 from EarlyStopException import EarlyExitException
-from OptionalExitModule import OptionalExitModule
+from OptionalExitModule import OptionalExitModule, TrainingState
+
 
 class EarlyExitModel(nn.Module):
 
@@ -14,72 +15,97 @@ class EarlyExitModel(nn.Module):
         self.original_modules = {}
         self.device = device
         
+        self.state = TrainingState.INFER
+        
         self.original_idx_per_exit_module = []
-
+        
+        self.num_exits_per_module = []
+        
+    def set_state(self, state):
+        self.state = state
+        for module in self.exit_modules:
+            module.set_state(state)
 
     def clear_exits(self):
+        # replaces wrapped modules with original module
         for attr, original_module in self.original_modules.items():
             setattr(self.model, attr, original_module)
         self.original_modules = {}
         self.exit_modules = []
 
     def add_exit(self, attr):
+        # add an early exit module
         layer = getattr(self.model, attr)
         self.original_modules[attr] = layer
         optional_exit_module = OptionalExitModule(layer, self.num_outputs)
+        optional_exit_module.set_state(self.state)
         setattr(self.model, attr, optional_exit_module)
         self.exit_modules.append(optional_exit_module)
         return optional_exit_module
 
     def forward(self, X):
+        
+        batch_size, *sample_shape = X.shape
+        
         last_layer_y_hat = None
+        
+        # y_hat of layer where there are no remaining images to push forward in the model. All samples have exited
+        final_exit_y_hat = None
         try:
             last_layer_y_hat = self.model(X)
-        except Exception as e:
-            if not isinstance(e, EarlyExitException):
-                raise e
-
-        y_hat = torch.empty((len(X), self.num_outputs), device=self.device)
-        exit_gate_logits = torch.empty((len(X), 1), device=self.device)
-        exit_points = torch.ones(len(X), device=self.device) * len(self.exit_modules)
-        idx = torch.arange(len(X)).to(self.device)
+        except EarlyExitException as e:
+            final_exit_y_hat = e.y_hat
         
-        self.original_idx_per_exit_module = []
-
-        for i, exit_module in enumerate(self.exit_modules):
-            if len(idx) == 0:
-                break
-            if exit_module.early_y is not None:
-                original_idx = idx[exit_module.exit_idx]
-                self.original_idx_per_exit_module.append(original_idx)
-
-                # Create new tensors to accumulate values
-                y_hat_accum = torch.clone(y_hat)
-                exit_gate_logits_accum = torch.clone(exit_gate_logits)
-
-                y_hat_accum[original_idx] = exit_module.early_y
-                exit_gate_logits_accum[original_idx] = exit_module.should_exit_results
-
-                # Update the original tensors
-                y_hat = y_hat_accum
-                exit_gate_logits = exit_gate_logits_accum
-
-                exit_points[original_idx] = i
-
-                keep_mask = torch.ones(idx.shape, dtype=torch.bool, device=self.device)
-                keep_mask[exit_module.exit_idx] = False
-                idx = idx[keep_mask]
-            else:
-                # still append None to original_idx_per_exit_module
-                self.original_idx_per_exit_module.append(None)
-
-        if last_layer_y_hat is not None:
-            y_hat[idx] = last_layer_y_hat
-            self.original_idx_per_exit_module.append(idx)
+        if self.state == TrainingState.TRAIN_CLASSIFIER_EXIT or self.state == TrainingState.TRAIN_CLASSIFIER_FORWARD:
             
-            exit_gate_logits_new = torch.full(exit_gate_logits.shape, float('inf'), device=exit_gate_logits.device)
-            exit_gate_logits_new[~idx] = exit_gate_logits[~idx].clone()
-            exit_gate_logits = exit_gate_logits_new
-
-
-        return y_hat, exit_points, exit_gate_logits
+            if last_layer_y_hat is not None:
+                # if forward pass made it to the back of the layer, get the last layer y_hat
+                return last_layer_y_hat
+            
+            # if exit occured before last classifier, get y_hat where exit occured
+            return final_exit_y_hat
+        
+        
+        if self.state == TrainingState.TRAIN_EXIT:
+            
+            assert last_layer_y_hat is not None, "forward propagation should have made it to the end of the model"
+            
+            y_hats = torch.empty((batch_size, len(self.exit_modules) + 1, self.num_outputs), device=self.device)
+            exit_confidences = torch.empty((batch_size, len(self.exit_modules)), device=self.device)
+            
+            # TODO: set cost constant for each layer later
+            
+            for i, exit_module in enumerate(self.exit_modules):
+                y_hats[:, i] = exit_module.y_hat
+                exit_confidences[:, i] = exit_module.exit_confidences
+                
+            y_hats[:, -1] = last_layer_y_hat
+            
+            return y_hats, exit_confidences
+        
+        
+        if self.state == TrainingState.INFER:
+            
+            y_hats = torch.empty((batch_size, self.num_outputs), device=self.device)
+            
+            remaining_idx = torch.arange(batch_size).to(self.device)
+            
+            self.num_exits_per_module = []
+            
+            for exit_module in self.exit_modules:
+                # use indices of exits taken in the model's (reduced) batched to obtain the translated original index within the original batch
+                original_idx = remaining_idx[exit_module.exit_taken_idx]
+                y_hats[original_idx] = exit_module.y_hat
+                
+                # mirroring how the batch is reduced by the exit module, reduce index look up array the same way
+                to_keep = torch.ones(remaining_idx.shape)
+                to_keep[exit_module.exit_taken_idx] = 0
+                remaining_idx = remaining_idx[to_keep]
+                
+                self.num_exits_per_module.append(len(exit_module.exit_taken_idx))
+                
+            # if even after going through each early exit layer, there are samples that did not exit, grab the y_hat from terminal classifier
+            if len(remaining_idx) > 0:
+                y_hats[remaining_idx] = last_layer_y_hat
+            
+            return y_hats
