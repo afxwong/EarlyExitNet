@@ -34,14 +34,15 @@ class OptionalExitModule(nn.Module):
     def forward_train_classifier_exit(self, X, X_flat):
         # every sample is forced to exit
         self.y_hat = self.classifier(X_flat)
-        raise EarlyExitException()
+        raise EarlyExitException(y_hat=self.y_hat)
         
         
     def forward_train_exit(self, X, X_flat):
         # get every exit confidence, every classification as if all exits were taken, and push forward in the model in the end
-        X_flat = X_flat.copy().detach()
+        X_flat = X_flat.clone().detach()
         self.exit_confidences = torch.sigmoid(torch.flatten(self.exit_gate(X_flat)))
-        self.y_hat = self.classifier(X_flat)
+        with torch.no_grad():
+            self.y_hat = self.classifier(X_flat)
         
         return self.module(X)
     
@@ -55,7 +56,7 @@ class OptionalExitModule(nn.Module):
         
         exit_mask = self.exit_confidences > 0.5
         self.exit_taken_idx = torch.where(exit_mask)[0]
-        num_exits_taken = len(self.exit_idx)
+        num_exits_taken = len(self.exit_taken_idx)
 
         if num_exits_taken > 0:
             X_classify = X_flat[exit_mask]
@@ -63,7 +64,7 @@ class OptionalExitModule(nn.Module):
 
         if num_exits_taken == batch_size:
             # self.y_hat will have classificaiton results to collect later on
-            raise EarlyExitException()
+            raise EarlyExitException(y_hat=self.y_hat)
 
         return self.module(X[~exit_mask])
         

@@ -57,7 +57,7 @@ class EarlyExitModel(nn.Module):
             final_exit_y_hat = e.y_hat
         
         if self.state == TrainingState.TRAIN_CLASSIFIER_EXIT or self.state == TrainingState.TRAIN_CLASSIFIER_FORWARD:
-            
+    
             if last_layer_y_hat is not None:
                 # if forward pass made it to the back of the layer, get the last layer y_hat
                 return last_layer_y_hat
@@ -86,26 +86,29 @@ class EarlyExitModel(nn.Module):
         
         if self.state == TrainingState.INFER:
             
-            y_hats = torch.empty((batch_size, self.num_outputs), device=self.device)
+            y_hat = torch.empty((batch_size, self.num_outputs), device=self.device)
             
             remaining_idx = torch.arange(batch_size).to(self.device)
             
             self.num_exits_per_module = []
             
             for exit_module in self.exit_modules:
+                if len(remaining_idx) == 0: break
+                if len(exit_module.exit_taken_idx) == 0: continue
+                
                 # use indices of exits taken in the model's (reduced) batched to obtain the translated original index within the original batch
                 original_idx = remaining_idx[exit_module.exit_taken_idx]
-                y_hats[original_idx] = exit_module.y_hat
+                y_hat[original_idx] = exit_module.y_hat
                 
                 # mirroring how the batch is reduced by the exit module, reduce index look up array the same way
                 to_keep = torch.ones(remaining_idx.shape)
                 to_keep[exit_module.exit_taken_idx] = 0
-                remaining_idx = remaining_idx[to_keep]
+                remaining_idx = remaining_idx[to_keep == 1]
                 
                 self.num_exits_per_module.append(len(exit_module.exit_taken_idx))
                 
             # if even after going through each early exit layer, there are samples that did not exit, grab the y_hat from terminal classifier
             if len(remaining_idx) > 0:
-                y_hats[remaining_idx] = last_layer_y_hat
+                y_hat[remaining_idx] = last_layer_y_hat
             
-            return y_hats
+            return y_hat
