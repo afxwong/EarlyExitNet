@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os
 from OptionalExitModule import TrainingState
@@ -12,6 +13,7 @@ class ModelTrainer:
         self.device = device
         self.classifier_loss_function = nn.CrossEntropyLoss()
         self.gate_loss_function = EarlyExitGateLoss()
+        self.writer = SummaryWriter()
         
     # MARK: - Training Classifiers
     def train_classifier_epoch(self, train_loader, epoch, validation_loader=None):
@@ -77,10 +79,16 @@ class ModelTrainer:
             # train the classifier
             for epoch in range(epoch_count):
                 # TODO: bail out early if last 5 validation accuracies are decreasing
-                _, _, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
+                loss, accuracy, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
                 validation_losses.append(validation_loss)
                 validation_accuracies.append(validation_accuracy)
                 
+                # write to tensorboard
+                self.writer.add_scalar(f'Loss/train/classifier {i}', loss, epoch)
+                self.writer.add_scalar(f'Accuracy/train/classifier {i}', accuracy, epoch)
+                self.writer.add_scalar(f'Loss/validation/classifier {i}', validation_loss, epoch)
+                self.writer.add_scalar(f'Accuracy/validation/classifier {i}', validation_accuracy, epoch)
+            
                 if self.should_stop_early(validation_accuracies):
                     print("Validation accuracies are decreasing, stopping training early")
                     break   
@@ -96,15 +104,22 @@ class ModelTrainer:
             
         for epoch in range(epoch_count):
             # TODO: bail out early if last 5 validation accuracies are decreasing
-            _, _, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
+            loss, accuracy, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
             validation_losses.append(validation_loss)
             validation_accuracies.append(validation_accuracy)
+            
+            # write to tensorboard
+            self.writer.add_scalar(f'Loss/train/classifier {len(self.model.exit_modules) + 1}', loss, epoch)
+            self.writer.add_scalar(f'Accuracy/train/classifier {len(self.model.exit_modules) + 1}', accuracy, epoch)
+            self.writer.add_scalar(f'Loss/validation/classifier {len(self.model.exit_modules) + 1}', validation_loss, epoch)
+            self.writer.add_scalar(f'Accuracy/validation/classifier {len(self.model.exit_modules) + 1}', validation_accuracy, epoch)
             
             if self.should_stop_early(validation_accuracies):
                 print("Validation accuracies are decreasing, stopping training early")
                 break
             
         self.save_model(f'final_classifier.pt')
+        self.writer.flush()
            
     # MARK: - Training Exits
     def train_exit_epoch(self, train_loader, epoch, validation_loader=None):
@@ -159,9 +174,15 @@ class ModelTrainer:
             
             # set model state
             self.model.set_state(TrainingState.TRAIN_EXIT)
-            _, validation_accuracy, validation_time = self.train_exit_epoch(train_loader, epoch, validation_loader)
+            loss, validation_accuracy, validation_time = self.train_exit_epoch(train_loader, epoch, validation_loader)
             validation_accuracies.append(validation_accuracy)
             validation_times.append(validation_time)
+            
+            # write to tensorboard
+            self.writer.add_scalar(f'Loss/train/exit gates', loss, epoch)
+            self.writer.add_scalar(f'Accuracy/train/exit gates', validation_accuracy, epoch)
+            self.writer.add_scalar(f'Time/train/exit gates', validation_time, epoch)
+            
             
             if self.should_stop_early(validation_accuracies):
                 print("Validation accuracies are decreasing, stopping training early")
@@ -169,6 +190,7 @@ class ModelTrainer:
             
             # save the model
             self.save_model(f'full_model_with_exit_gates.pt')
+            self.writer.flush()
             
     # MARK: - Training Helpers
     def calculate_accuracy(self, y_hat, y):
