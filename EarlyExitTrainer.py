@@ -64,6 +64,9 @@ class ModelTrainer:
         
         self.model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
         for i in range(len(self.model.exit_modules)):
+            validation_accuracies = []
+            validation_losses = []
+            
             print("Training classifier for exit", i+1)
                   
             # set exits before you to be forward, with you being exit
@@ -74,16 +77,34 @@ class ModelTrainer:
             # train the classifier
             for epoch in range(epoch_count):
                 # TODO: bail out early if last 5 validation accuracies are decreasing
-                loss, accuracy, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
+                _, _, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
+                validation_losses.append(validation_loss)
+                validation_accuracies.append(validation_accuracy)
                 
+                if self.should_stop_early(validation_accuracies):
+                    print("Validation accuracies are decreasing, stopping training early")
+                    break   
+                
+            self.save_model(f'exit_{i+1}_classifier.pt')
+            
         # train the final classifier
         print("Training final classifier")
+        validation_accuracies = []
+        validation_losses = []
         for i in range(len(self.model.exit_modules)):
             self.model.exit_modules[i].set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
             
         for epoch in range(epoch_count):
             # TODO: bail out early if last 5 validation accuracies are decreasing
-            loss, accuracy, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
+            _, _, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
+            validation_losses.append(validation_loss)
+            validation_accuracies.append(validation_accuracy)
+            
+            if self.should_stop_early(validation_accuracies):
+                print("Validation accuracies are decreasing, stopping training early")
+                break
+            
+        self.save_model(f'final_classifier.pt')
            
     # MARK: - Training Exits
     def train_exit_epoch(self, train_loader, epoch, validation_loader=None):
@@ -117,8 +138,6 @@ class ModelTrainer:
             loss.backward()
             optimizer.step()
             
-            # print(self.model.exit_modules[0].exit_gate.weight)
-            
             # Update and display the progress bar at the end of each epoch
             progress_bar.set_postfix({"Loss": loss.item()})
                 
@@ -132,12 +151,24 @@ class ModelTrainer:
         return net_loss / len(train_loader), validation_accuracy, validation_time
             
     def train_exit_layers(self, train_loader, epoch_count=1, validation_loader=None):
+        validation_accuracies = []
+        validation_times = []
+        
         for epoch in range(epoch_count):
             # run the train cycle
             
             # set model state
             self.model.set_state(TrainingState.TRAIN_EXIT)
-            loss, validation_accuracy, validation_time = self.train_exit_epoch(train_loader, epoch, validation_loader)
+            _, validation_accuracy, validation_time = self.train_exit_epoch(train_loader, epoch, validation_loader)
+            validation_accuracies.append(validation_accuracy)
+            validation_times.append(validation_time)
+            
+            if self.should_stop_early(validation_accuracies):
+                print("Validation accuracies are decreasing, stopping training early")
+                break
+            
+            # save the model
+            self.save_model(f'full_model_with_exit_gates.pt')
             
     # MARK: - Training Helpers
     def calculate_accuracy(self, y_hat, y):
@@ -145,8 +176,7 @@ class ModelTrainer:
     
     def validate_classifier(self, validation_loader):
         self.model.eval()
-        
-        # purposefully do not change the state of the model
+        # purposefully do not change the state of the model since we are only validating the classifier
         
         total_loss = 0.0
         total_accuracy = 0.0
@@ -185,3 +215,19 @@ class ModelTrainer:
                 total_time += totaltime
                 
         return total_accuracy / len(validation_loader), total_time / len(validation_loader)
+    
+    # MARK: - Utils
+    def should_stop_early(self, validation_accuracy_list):
+        # return true if the last 5 validation accuracies are decreasing
+        if len(validation_accuracy_list) < 5:
+            return False
+        
+        return validation_accuracy_list[-1] < validation_accuracy_list[-2] < validation_accuracy_list[-3] < validation_accuracy_list[-4] < validation_accuracy_list[-5]
+    
+    def save_model(self, model_name):
+        if not os.path.exists('models'):
+            os.makedirs('models')
+        torch.save(self.model.state_dict(), os.path.join('models', model_name))
+        
+    def load_model(self, model_name):
+        self.model.load_state_dict(torch.load(os.path.join('models', model_name)))
