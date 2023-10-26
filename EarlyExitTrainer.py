@@ -53,12 +53,12 @@ class ModelTrainer:
         print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
             
 
-        # # Optionally, calculate validation loss
-        # if validation_loader is not None:
-        #     validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
-        #     print(f'Epoch {epoch} Validation Loss {validation_loss}')
-        #     print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
-        #     print("=====================================")
+        # Optionally, calculate validation loss
+        if validation_loader is not None:
+            validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
+            print(f'Epoch {epoch} Validation Loss {validation_loss}')
+            print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+            print("=====================================")
             
         return net_loss / len(train_loader), net_accuracy / len(train_loader), validation_loss, validation_accuracy
         
@@ -127,6 +127,8 @@ class ModelTrainer:
         self.model.train()
         
         net_loss = 0.0
+        validation_accuracy = 0.0
+        validation_time = 0.0
         
         progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
@@ -160,7 +162,7 @@ class ModelTrainer:
             # Update and display the progress bar at the end of each epoch
             progress_bar.set_postfix({"Loss": loss.item()})
                 
-         # Optionally, calculate validation metrics
+        # Optionally, calculate validation metrics
         if validation_loader is not None:
             validation_accuracy, validation_time = self.validate_exit_gates(validation_loader)
             print(f'Epoch {epoch} Validation Time {validation_time}')

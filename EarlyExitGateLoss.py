@@ -7,7 +7,7 @@ class EarlyExitGateLoss(nn.Module):
         super(EarlyExitGateLoss, self).__init__()
         self.device = device
     
-        assert alpha > 0 and alpha < 1, "alpha must be between 0 and 1 (exclusive)"
+        assert alpha >= 0 and alpha <= 1, "alpha must be between 0 and 1 (inclusive)"
         self.alpha = alpha
         
         self.CELoss = nn.CrossEntropyLoss()
@@ -21,6 +21,7 @@ class EarlyExitGateLoss(nn.Module):
         batch_size, num_classifiers, num_outputs = y_hats.shape
         num_exits = num_classifiers - 1
         
+        # MARK: - 1st Half of Loss Function
         gate_summation = torch.zeros(1, device=self.device)[0]
         
         for b in range(batch_size):
@@ -40,25 +41,32 @@ class EarlyExitGateLoss(nn.Module):
                 gate_summation += prob_reaches_gate * g[i] * ce
                 
             # at the terminal classifier, accumulate the CE loss where every other gate does not exit 
-            gate_summation += self.CELoss(y_hat[-1], y) * prob_reaches_gate
-            
+            gate_summation += self.CELoss(y_hat[-1], y) * torch.prod(g_hat)
+
+        # MARK: - 2nd Half of Loss Function
+        cost_summation = torch.zeros(1, device=self.device)[0]
         
-        exit_costs = torch.zeros(1, device=self.device)[0]
-            
         for b in range(batch_size):
-            g = exit_confidences[b]  # exit confidence per exit gate for the given sample
-            for i, exit_g in enumerate(g):
-                # find the first gate, from left to right, at which an exit is taken
-                if exit_g > 0.5:
-                    # accumulate the experienced cost of this classification execution
-                    exit_costs += costs[i]
-                    break
-            else:
-                # if the loop doesn't break, the classification makes it to the end. Thus, the final cost is experienced
-                exit_costs += costs[-1]
-        print("gate_summation: ", gate_summation, "exit_costs: ", exit_costs)      
+            # for each sample in the batch, get the:
+            y = ys[b]  # true label
+            y_hat = y_hats[b]  # predicted label distribution
+            g = exit_confidences[b]  # exit confidence per exit gate
+            g_hat = 1 - g  # forward confidence per exit gate
+            
+            for i in range(num_exits):
+                # get the probability that the sample reaches the ith gate (i.e. does not exit at any previous gate)
+                prob_reaches_gate = torch.prod(g_hat[:i])
+                
+                # cross entropy loss due to classification setting
+                ce = costs[i]
+                # accumulate the expected loss by considering the probability of the event
+                cost_summation += prob_reaches_gate * g[i] * ce
+                
+            # at the terminal classifier, accumulate the CE loss where every other gate does not exit 
+            cost_summation += costs[-1] * torch.prod(g_hat)
+        
         # we want to simulatenously minimize the mean CE Loss and the expected runtime cost balanced by alpha
-        loss = (1 - self.alpha) * (gate_summation / batch_size) + self.alpha * (exit_costs / batch_size)
+        loss = (1 - self.alpha) * (gate_summation / batch_size) + self.alpha * (cost_summation / batch_size)
         
         return loss
         
