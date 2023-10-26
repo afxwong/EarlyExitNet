@@ -54,8 +54,8 @@ class EarlyExitGateLoss(nn.Module):
                 # if the loop doesn't break, the classification makes it to the end. Thus, the final cost is experienced
                 exit_costs += costs[-1]
                 
-        # we want to simulatenously minimize the expected CE Loss and the expected runtime cost balanced by alpha
-        loss = (1 - self.alpha) * gate_summation + self.alpha * exit_costs
+        # we want to simulatenously minimize the mean CE Loss and the expected runtime cost balanced by alpha
+        loss = (1 - self.alpha) * (gate_summation / batch_size) + self.alpha * (exit_costs / batch_size)
         
         return loss
         
