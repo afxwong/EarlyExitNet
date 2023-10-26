@@ -6,7 +6,10 @@ class EarlyExitGateLoss(nn.Module):
     def __init__(self, device, alpha=0.5):
         super(EarlyExitGateLoss, self).__init__()
         self.device = device
+    
+        assert alpha > 0 and alpha < 1, "alpha must be between 0 and 1 (exclusive)"
         self.alpha = alpha
+        
         self.CELoss = nn.CrossEntropyLoss()
     
     def forward(self, ys, y_hats, exit_confidences, costs):
@@ -53,7 +56,7 @@ class EarlyExitGateLoss(nn.Module):
             else:
                 # if the loop doesn't break, the classification makes it to the end. Thus, the final cost is experienced
                 exit_costs += costs[-1]
-                
+        print("gate_summation: ", gate_summation, "exit_costs: ", exit_costs)      
         # we want to simulatenously minimize the mean CE Loss and the expected runtime cost balanced by alpha
         loss = (1 - self.alpha) * (gate_summation / batch_size) + self.alpha * (exit_costs / batch_size)
         
