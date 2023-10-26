@@ -27,18 +27,17 @@ class EarlyExitGateLoss(nn.Module):
             g = exit_confidences[b]  # exit confidence per exit gate
             g_hat = 1 - g  # forward confidence per exit gate
             
-            # accumulate the forward confidence up to the current exit gate
-            prob_reaches_gate = 1
-            
             for i in range(num_exits):
+                # get the probability that the sample reaches the ith gate (i.e. does not exit at any previous gate)
+                prob_reaches_gate = torch.prod(g_hat[:i])
+                
                 # cross entropy loss due to classification setting
-                ce = self.CELoss(y_hat[i], y[i])
+                ce = self.CELoss(y_hat[i], y)
                 # accumulate the expected loss by considering the probability of the event
-                summation += prob_reaches_gate * g[i] * ce
-                # update the probability of reaching the next gate by the forward confidence
-                prob_reaches_gate *= g_hat[i]
+                gate_summation += prob_reaches_gate * g[i] * ce
+                
             # at the terminal classifier, accumulate the CE loss where every other gate does not exit 
-            gate_summation += self.CELoss(y_hat[-1], y[-1]) * prob_reaches_gate
+            gate_summation += self.CELoss(y_hat[-1], y) * prob_reaches_gate
             
         
         exit_costs = torch.zeros(1, device=self.device)[0]

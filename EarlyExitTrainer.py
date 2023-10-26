@@ -6,6 +6,7 @@ import os
 from OptionalExitModule import TrainingState
 from EarlyExitGateLoss import EarlyExitGateLoss
 import time
+import pickle
 
 class ModelTrainer:
     def __init__(self, model, device):
@@ -21,8 +22,8 @@ class ModelTrainer:
         net_loss = 0.0
         net_accuracy = 0.0
         
-        validation_loss = None
-        validation_accuracy = None
+        validation_loss = 0.0
+        validation_accuracy = 0.0
         
         progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
@@ -52,12 +53,12 @@ class ModelTrainer:
         print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
             
 
-        # Optionally, calculate validation loss
-        if validation_loader is not None:
-            validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
-            print(f'Epoch {epoch} Validation Loss {validation_loss}')
-            print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
-            print("=====================================")
+        # # Optionally, calculate validation loss
+        # if validation_loader is not None:
+        #     validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
+        #     print(f'Epoch {epoch} Validation Loss {validation_loss}')
+        #     print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+        #     print("=====================================")
             
         return net_loss / len(train_loader), net_accuracy / len(train_loader), validation_loss, validation_accuracy
         
@@ -93,7 +94,7 @@ class ModelTrainer:
                     print("Validation accuracies are decreasing, stopping training early")
                     break   
                 
-            self.save_model(f'exit_{i+1}_classifier.pt')
+            self.save_model(f'exit_{i+1}_classifier.pkl')
             
         # train the final classifier
         print("Training final classifier")
@@ -118,7 +119,7 @@ class ModelTrainer:
                 print("Validation accuracies are decreasing, stopping training early")
                 break
             
-        self.save_model(f'final_classifier.pt')
+        self.save_model(f'final_classifier.pkl')
         self.writer.flush()
            
     # MARK: - Training Exits
@@ -192,7 +193,7 @@ class ModelTrainer:
                 break
             
             # save the model
-            self.save_model(f'full_model_with_exit_gates.pt')
+            self.save_model(f'full_model_with_exit_gates.pkl')
             self.writer.flush()
             
     # MARK: - Training Helpers
@@ -252,7 +253,7 @@ class ModelTrainer:
     def save_model(self, model_name):
         if not os.path.exists('models'):
             os.makedirs('models')
-        torch.save(self.model.state_dict(), os.path.join('models', model_name))
+        pickle.dump(self.model, open(os.path.join('models', model_name), 'wb'))
         
     def load_model(self, model_name):
-        self.model.load_state_dict(torch.load(os.path.join('models', model_name)))
+        self.model = pickle.load(open(os.path.join('models', model_name), 'rb'))
