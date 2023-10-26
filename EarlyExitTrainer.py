@@ -12,7 +12,7 @@ class ModelTrainer:
         self.model = model
         self.device = device
         self.classifier_loss_function = nn.CrossEntropyLoss()
-        self.gate_loss_function = EarlyExitGateLoss()
+        self.gate_loss_function = EarlyExitGateLoss(self.device, alpha=0.5)
         self.writer = SummaryWriter()
         
     # MARK: - Training Classifiers
@@ -146,7 +146,10 @@ class ModelTrainer:
             
             optimizer.zero_grad()
             
-            loss = self.gate_loss_function(y, y_hats, exit_confidences, range(len(self.model.exit_modules)+1))
+            num_classifiers = len(y_hats[0])
+            basic_costs = (torch.arange(num_classifiers) + 1) / num_classifiers
+            
+            loss = self.gate_loss_function(y, y_hats, exit_confidences, basic_costs)
             
             net_loss += loss.item()
 
