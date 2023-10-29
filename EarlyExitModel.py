@@ -93,6 +93,11 @@ class EarlyExitModel(nn.Module):
             self.num_exits_per_module = []
             
             for exit_module in self.exit_modules:
+                try:
+                    self.num_exits_per_module.append(len(exit_module.exit_taken_idx))
+                except:
+                    self.num_exits_per_module.append(0)
+                    
                 if len(remaining_idx) == 0: break
                 if len(exit_module.exit_taken_idx) == 0: continue
                 
@@ -105,10 +110,9 @@ class EarlyExitModel(nn.Module):
                 to_keep[exit_module.exit_taken_idx] = 0
                 remaining_idx = remaining_idx[to_keep == 1]
                 
-                self.num_exits_per_module.append(len(exit_module.exit_taken_idx))
-                
             # if even after going through each early exit layer, there are samples that did not exit, grab the y_hat from terminal classifier
             if len(remaining_idx) > 0:
                 y_hat[remaining_idx] = last_layer_y_hat
+                self.num_exits_per_module.append(len(remaining_idx))
             
             return y_hat

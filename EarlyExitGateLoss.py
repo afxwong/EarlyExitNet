@@ -68,7 +68,7 @@ class EarlyExitGateLoss(nn.Module):
         # we want to simulatenously minimize the mean CE Loss and the expected runtime cost balanced by alpha
         loss = (1 - self.alpha) * (gate_summation / batch_size) + self.alpha * (cost_summation / batch_size)
         
-        return loss
+        return loss, (1 - self.alpha) * (gate_summation / batch_size), self.alpha * (cost_summation / batch_size)
         
             
         

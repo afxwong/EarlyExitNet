@@ -9,12 +9,13 @@ import time
 import pickle
 
 class ModelTrainer:
-    def __init__(self, model, device):
+    def __init__(self, model, device, alpha=0.5):
         self.model = model
         self.device = device
         self.classifier_loss_function = nn.CrossEntropyLoss()
-        self.gate_loss_function = EarlyExitGateLoss(self.device, alpha=0.5)
+        self.gate_loss_function = EarlyExitGateLoss(self.device, alpha)
         self.writer = SummaryWriter()
+        self.progress_bar = None
         
     # MARK: - Training Classifiers
     def train_classifier_epoch(self, train_loader, epoch, validation_loader=None):
@@ -25,9 +26,9 @@ class ModelTrainer:
         validation_loss = 0.0
         validation_accuracy = 0.0
         
-        progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
+        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
-        for i, (X, y) in enumerate(progress_bar):
+        for i, (X, y) in enumerate(self.progress_bar):
             X = X.to(self.device)
             y = y.to(self.device)
             y_hat = self.model(X)
@@ -47,7 +48,7 @@ class ModelTrainer:
             optimizer.step()
             
             # Update and display the progress bar at the end of each epoch
-            progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
+            self.progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
         
         print(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
         print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
@@ -130,9 +131,9 @@ class ModelTrainer:
         validation_accuracy = 0.0
         validation_time = 0.0
         
-        progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
+        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
-        for i, (X, y) in enumerate(progress_bar):
+        for i, (X, y) in enumerate(self.progress_bar):
             X = X.to(self.device)
             y = y.to(self.device)
             y_hats, exit_confidences = self.model(X)
@@ -145,14 +146,14 @@ class ModelTrainer:
                 else:
                     trainable_params += list(filter(lambda p: p.requires_grad, exit_layer.exit_gate.parameters()))
             
-            optimizer = torch.optim.Adam(trainable_params, lr=0.0001)
+            optimizer = torch.optim.Adam(trainable_params, lr=0.00000001)
             
             optimizer.zero_grad()
             
             num_classifiers = len(y_hats[0])
             basic_costs = (torch.arange(num_classifiers) + 1) / num_classifiers
             
-            loss = self.gate_loss_function(y, y_hats, exit_confidences, basic_costs)
+            loss, ce_part, cost_part = self.gate_loss_function(y, y_hats, exit_confidences, basic_costs)
             
             net_loss += loss.item()
 
@@ -160,14 +161,24 @@ class ModelTrainer:
             optimizer.step()
             
             # Update and display the progress bar at the end of each epoch
-            progress_bar.set_postfix({"Loss": loss.item()})
+            self.progress_bar.set_postfix({"Loss": loss.item()})
                 
-        # Optionally, calculate validation metrics
-        if validation_loader is not None:
-            validation_accuracy, validation_time = self.validate_exit_gates(validation_loader)
-            print(f'Epoch {epoch} Validation Time {validation_time}')
-            print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
-            print("=====================================")
+            # Optionally, calculate validation metrics
+            if validation_loader is not None and i % 5 == 0:
+                validation_accuracy, validation_time, exit_idx = self.validate_exit_gates(validation_loader)
+              
+                # write to tensorboard
+                self.writer.add_scalar(f'Loss/train/exit gates', loss, (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Loss Part 1/train/exit gates', ce_part.item(), (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Loss Part 2/train/exit gates', cost_part.item(), (epoch * len(train_loader) + i))
+
+                
+
+                self.writer.add_scalar(f'Accuracy/val/exit gates', validation_accuracy, (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Time/val/exit gates', validation_time, (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Exit Idx/val/exit gates', exit_idx, (epoch * len(train_loader) + i))
+                self.model.train()
+                self.model.set_state(TrainingState.TRAIN_EXIT)
             
         return net_loss / len(train_loader), validation_accuracy, validation_time
             
@@ -183,11 +194,10 @@ class ModelTrainer:
             loss, validation_accuracy, validation_time = self.train_exit_epoch(train_loader, epoch, validation_loader)
             validation_accuracies.append(validation_accuracy)
             validation_times.append(validation_time)
-            
-            # write to tensorboard
-            self.writer.add_scalar(f'Loss/train/exit gates', loss, epoch)
-            self.writer.add_scalar(f'Accuracy/train/exit gates', validation_accuracy, epoch)
-            self.writer.add_scalar(f'Time/train/exit gates', validation_time, epoch)
+
+            print(f'Epoch {epoch} Validation Time {validation_time}')
+            print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+            print("=====================================")
             
             
             if self.should_stop_early(validation_accuracies):
@@ -228,9 +238,10 @@ class ModelTrainer:
         
         total_accuracy = 0.0
         total_time = 0.0
+        total_exit_index_taken = 0.0
         
         with torch.no_grad():
-            for X_val, y_val in validation_loader:
+            for i, (X_val, y_val) in enumerate(validation_loader):
                 starttime = time.time()
                 X_val = X_val.to(self.device)
                 y_val = y_val.to(self.device)
@@ -238,11 +249,20 @@ class ModelTrainer:
                 
                 totaltime = time.time() - starttime
                 val_accuracy = self.calculate_accuracy(y_hat_val, y_val)
+
+                exits_taken_count = torch.tensor(self.model.num_exits_per_module, device=self.device)
+                weights = torch.arange(len(exits_taken_count), device=self.device) + 1
+
+                weighted_avg = (torch.sum(exits_taken_count * weights)).item() / len(X_val)
+
+                self.progress_bar.set_postfix({"Accuracy": val_accuracy, "Time": totaltime, 
+                                               "Avg Exit Idx": weighted_avg})
                 
                 total_accuracy += val_accuracy
                 total_time += totaltime
+                total_exit_index_taken += weighted_avg
                 
-        return total_accuracy / len(validation_loader), total_time / len(validation_loader)
+        return total_accuracy / len(validation_loader), total_time / len(validation_loader), total_exit_index_taken / len(validation_loader)
     
     # MARK: - Utils
     def should_stop_early(self, validation_accuracy_list):
