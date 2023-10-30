@@ -13,9 +13,14 @@ class ModelTrainer:
         self.model = model
         self.device = device
         self.classifier_loss_function = nn.CrossEntropyLoss()
-        self.gate_loss_function = EarlyExitGateLoss(self.device, alpha)
+        self.gate_loss_function = None # gets set by set_alpha call
+        self.alpha = None # gets set by set_alpha call
+        
         self.writer = SummaryWriter()
         self.progress_bar = None
+        
+        # create the gate loss function
+        self.set_alpha(alpha)
         
     # MARK: - Training Classifiers
     def train_classifier_epoch(self, train_loader, epoch, validation_loader=None):
@@ -168,32 +173,34 @@ class ModelTrainer:
                 validation_accuracy, validation_time, exit_idx = self.validate_exit_gates(validation_loader)
               
                 # write to tensorboard
-                self.writer.add_scalar(f'Loss/train/exit gates', loss, (epoch * len(train_loader) + i))
-                self.writer.add_scalar(f'Loss Part 1/train/exit gates', ce_part.item(), (epoch * len(train_loader) + i))
-                self.writer.add_scalar(f'Loss Part 2/train/exit gates', cost_part.item(), (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Loss/alpha={self.alpha}/exit gates', loss, (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Loss Part 1/alpha={self.alpha}/exit gates', ce_part.item(), (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Loss Part 2/alpha={self.alpha}/exit gates', cost_part.item(), (epoch * len(train_loader) + i))
 
                 
 
-                self.writer.add_scalar(f'Accuracy/val/exit gates', validation_accuracy, (epoch * len(train_loader) + i))
-                self.writer.add_scalar(f'Time/val/exit gates', validation_time, (epoch * len(train_loader) + i))
-                self.writer.add_scalar(f'Exit Idx/val/exit gates', exit_idx, (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Accuracy/alpha={self.alpha}/exit gates', validation_accuracy, (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Time/alpha={self.alpha}/exit gates', validation_time, (epoch * len(train_loader) + i))
+                self.writer.add_scalar(f'Exit Idx/alpha={self.alpha}/exit gates', exit_idx, (epoch * len(train_loader) + i))
                 self.model.train()
                 self.model.set_state(TrainingState.TRAIN_EXIT)
             
-        return net_loss / len(train_loader), validation_accuracy, validation_time
+        return net_loss / len(train_loader), validation_accuracy, validation_time, exit_idx
             
     def train_exit_layers(self, train_loader, epoch_count=1, validation_loader=None):
         validation_accuracies = []
         validation_times = []
+        exit_idx_runs = []
         
         for epoch in range(epoch_count):
             # run the train cycle
             
             # set model state
             self.model.set_state(TrainingState.TRAIN_EXIT)
-            loss, validation_accuracy, validation_time = self.train_exit_epoch(train_loader, epoch, validation_loader)
+            loss, validation_accuracy, validation_time, exit_idx = self.train_exit_epoch(train_loader, epoch, validation_loader)
             validation_accuracies.append(validation_accuracy)
             validation_times.append(validation_time)
+            exit_idx_runs.append(exit_idx)
 
             print(f'Epoch {epoch} Validation Time {validation_time}')
             print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
@@ -205,8 +212,11 @@ class ModelTrainer:
                 break
             
             # save the model
-            self.save_model(f'full_model_with_exit_gates.pkl')
+            alpha_without_decimals = str(self.alpha).replace('.', '_')
+            self.save_model(f'full_model_with_exit_gates_alpha_{alpha_without_decimals}.pkl')
             self.writer.flush()
+            
+        return validation_accuracies[-1], validation_times[-1], exit_idx_runs[-1]
             
     # MARK: - Training Helpers
     def calculate_accuracy(self, y_hat, y):
@@ -265,6 +275,11 @@ class ModelTrainer:
         return total_accuracy / len(validation_loader), total_time / len(validation_loader), total_exit_index_taken / len(validation_loader)
     
     # MARK: - Utils
+    def set_alpha(self, alpha):
+        self.alpha = alpha
+        self.gate_loss_function = EarlyExitGateLoss(self.device, alpha)
+        
+    
     def should_stop_early(self, validation_accuracy_list):
         # return true if the last 5 validation accuracies are decreasing
         if len(validation_accuracy_list) < 5:
