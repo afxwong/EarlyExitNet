@@ -283,6 +283,11 @@ class ModelTrainer:
         
     
     def should_stop_early(self, validation_accuracy_list):
+        # return true if we are above 99% accuracy
+        if len(validation_accuracy_list) > 0 and validation_accuracy_list[-1] > 0.99:
+            return True
+        
+        
         # return true if the last 5 validation accuracies are decreasing
         if len(validation_accuracy_list) < 5:
             return False
