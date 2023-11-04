@@ -9,14 +9,16 @@ import time
 import pickle
 
 class ModelTrainer:
-    def __init__(self, model, device, alpha=0.5):
+    def __init__(self, model, device, model_dir = os.path.join("models"), alpha=0.5):
         self.model = model
         self.device = device
+        self.model_dir = model_dir
+        
         self.classifier_loss_function = nn.CrossEntropyLoss()
         self.gate_loss_function = None # gets set by set_alpha call
         self.alpha = None # gets set by set_alpha call
         
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter(log_dir=os.path.join(self.model_dir, "runs"))
         self.progress_bar = None
         
         # create the gate loss function
@@ -169,7 +171,7 @@ class ModelTrainer:
             self.progress_bar.set_postfix({"Loss": loss.item()})
                 
             # Optionally, calculate validation metrics
-            if validation_loader is not None and i % 5 == 0:
+            if validation_loader is not None and i % 10 == 0:
                 validation_accuracy, validation_time, exit_idx = self.validate_exit_gates(validation_loader)
               
                 # write to tensorboard
@@ -288,9 +290,9 @@ class ModelTrainer:
         return validation_accuracy_list[-1] < validation_accuracy_list[-2] < validation_accuracy_list[-3] < validation_accuracy_list[-4] < validation_accuracy_list[-5]
     
     def save_model(self, model_name):
-        if not os.path.exists('models'):
-            os.makedirs('models')
-        pickle.dump(self.model, open(os.path.join('models', model_name), 'wb'))
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
+        pickle.dump(self.model, open(os.path.join(self.model_dir, model_name), 'wb'))
         
     def load_model(self, model_name):
-        self.model = pickle.load(open(os.path.join('models', model_name), 'rb'))
+        self.model = pickle.load(open(os.path.join(self.model_dir, model_name), 'rb'))

@@ -11,7 +11,7 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         record = self.hf_dataset[idx]
-        sample = record['image']
+        sample = record['image'] if 'image' in record else record['img']
         if sample.mode != 'RGB':
             sample = sample.convert('RGB')
         if self.transform is not None:
