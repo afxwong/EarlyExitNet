@@ -16,15 +16,38 @@ class EarlyExitModel(nn.Module):
         self.device = device
         
         self.state = TrainingState.INFER
-        
-        self.original_idx_per_exit_module = []
-        
         self.num_exits_per_module = []
+        self.costs = self.compute_costs_per_exit_module()
         
     def set_state(self, state):
         self.state = state
         for module in self.exit_modules:
             module.set_state(state)
+            
+    def compute_costs_per_exit_module(self):
+        if len(self.exit_modules) == 0:
+            return torch.tensor([1.0], device=self.device)
+
+        # Total number of parameters in the model
+        total_param_count = sum(p.numel() for p in self.model.parameters())
+
+        # Iterate through model layers and compute cost per layer
+        costs = []
+        running_param_count = 0.0
+        for layer in self.model.children():
+            if isinstance(layer, OptionalExitModule):
+                # Add the parameters of the exit layer's original module rather than the exit layer itself
+                running_param_count += sum(p.numel() for p in layer.module.parameters())
+                costs.append(running_param_count / total_param_count)
+            else:
+                running_param_count += sum(p.numel() for p in layer.parameters())
+
+        # Append the final cost, which represents the entire model
+        costs.append(1.0)
+        cost_tensor = torch.tensor(costs, device=self.device)
+        cost_tensor -= cost_tensor[0]
+        cost_tensor /= cost_tensor[-1]
+        return cost_tensor
 
     def clear_exits(self):
         # replaces wrapped modules with original module
@@ -32,6 +55,7 @@ class EarlyExitModel(nn.Module):
             setattr(self.model, attr, original_module)
         self.original_modules = {}
         self.exit_modules = []
+        self.costs = self.compute_costs_per_exit_module()
 
     def add_exit(self, attr, model_type):
         # add an early exit module
@@ -58,6 +82,7 @@ class EarlyExitModel(nn.Module):
             else:
                 setattr(self.model, attr, optional_exit_module)
         self.exit_modules.append(optional_exit_module)
+        self.costs = self.compute_costs_per_exit_module()
         return optional_exit_module
 
     def forward(self, X):

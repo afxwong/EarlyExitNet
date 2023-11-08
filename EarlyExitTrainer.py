@@ -163,10 +163,7 @@ class ModelTrainer:
             
             optimizer.zero_grad()
             
-            num_classifiers = len(y_hats[0])
-            basic_costs = (torch.arange(num_classifiers) + 1) / num_classifiers
-            
-            loss, ce_part, cost_part = self.gate_loss_function(y, y_hats, exit_confidences, basic_costs)
+            loss, ce_part, cost_part = self.gate_loss_function(y, y_hats, exit_confidences, self.model.costs)
             
             net_loss += loss.item()
 
