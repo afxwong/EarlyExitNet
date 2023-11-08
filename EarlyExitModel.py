@@ -38,14 +38,20 @@ class EarlyExitModel(nn.Module):
         if model_type == 'resnet':
             layer = getattr(self.model, attr)
         else:
-            layer = getattr(self.model.features, attr)
+            if "features" in attr:
+                edited_attr = attr.replace("features.", "")
+                layer = getattr(self.model.features, edited_attr)
+            else: layer = getattr(self.model, attr)
         self.original_modules[attr] = layer
         optional_exit_module = OptionalExitModule(layer, self.num_outputs)
         optional_exit_module.set_state(self.state)
         if model_type == 'resnet':
             setattr(self.model, attr, optional_exit_module)
         else:
-            setattr(self.model.features, attr, optional_exit_module)
+            if "features" in attr:
+                setattr(self.model.features, edited_attr, optional_exit_module)
+            else:
+                setattr(self.model, attr, optional_exit_module)
         self.exit_modules.append(optional_exit_module)
         return optional_exit_module
 

@@ -85,6 +85,7 @@ class ModelTrainer:
             for j in range(i):
                 self.model.exit_modules[j].set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
                 
+            max_accuracy = 0.0
             # train the classifier
             for epoch in range(epoch_count):
                 # TODO: bail out early if last 5 validation accuracies are decreasing
@@ -102,12 +103,15 @@ class ModelTrainer:
                     print("Validation accuracies are decreasing, stopping training early")
                     break   
                 
-            self.save_model(f'exit_{i+1}_classifier.pkl')
+                if validation_accuracy > max_accuracy:
+                    max_accuracy = validation_accuracy
+                    self.save_model(f'exit_{i+1}_classifier.pkl')
             
         # train the final classifier
         print("Training final classifier")
         validation_accuracies = []
         validation_losses = []
+        max_accuracy = 0.0
         for i in range(len(self.model.exit_modules)):
             self.model.exit_modules[i].set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
             
@@ -118,16 +122,18 @@ class ModelTrainer:
             validation_accuracies.append(validation_accuracy)
             
             # write to tensorboard
-            self.writer.add_scalar(f'Loss/train/classifier {len(self.model.exit_modules) + 1}', loss, epoch)
-            self.writer.add_scalar(f'Accuracy/train/classifier {len(self.model.exit_modules) + 1}', accuracy, epoch)
-            self.writer.add_scalar(f'Loss/validation/classifier {len(self.model.exit_modules) + 1}', validation_loss, epoch)
-            self.writer.add_scalar(f'Accuracy/validation/classifier {len(self.model.exit_modules) + 1}', validation_accuracy, epoch)
+            self.writer.add_scalar(f'Loss/train/classifier {len(self.model.exit_modules)}', loss, epoch)
+            self.writer.add_scalar(f'Accuracy/train/classifier {len(self.model.exit_modules)}', accuracy, epoch)
+            self.writer.add_scalar(f'Loss/validation/classifier {len(self.model.exit_modules)}', validation_loss, epoch)
+            self.writer.add_scalar(f'Accuracy/validation/classifier {len(self.model.exit_modules)}', validation_accuracy, epoch)
             
             if self.should_stop_early(validation_accuracies):
                 print("Validation accuracies are decreasing, stopping training early")
                 break
             
-        self.save_model(f'final_classifier.pkl')
+            if validation_accuracy > max_accuracy:
+                max_accuracy = validation_accuracy    
+                self.save_model(f'final_classifier.pkl')
         self.writer.flush()
            
     # MARK: - Training Exits
@@ -193,6 +199,7 @@ class ModelTrainer:
         validation_accuracies = []
         validation_times = []
         exit_idx_runs = []
+        max_accuracy = 0.0
         
         for epoch in range(epoch_count):
             # run the train cycle
@@ -213,9 +220,11 @@ class ModelTrainer:
                 print("Validation accuracies are decreasing, stopping training early")
                 break
             
-            # save the model
-            alpha_without_decimals = str(self.alpha).replace('.', '_')
-            self.save_model(f'full_model_with_exit_gates_alpha_{alpha_without_decimals}.pkl')
+            if validation_accuracy > max_accuracy:
+                max_accuracy = validation_accuracy
+                # save the model
+                alpha_without_decimals = str(self.alpha).replace('.', '_')
+                self.save_model(f'full_model_with_exit_gates_alpha_{alpha_without_decimals}.pkl')
             self.writer.flush()
             
         return validation_accuracies[-1], validation_times[-1], exit_idx_runs[-1]
@@ -273,6 +282,7 @@ class ModelTrainer:
                 total_accuracy += val_accuracy
                 total_time += totaltime
                 total_exit_index_taken += weighted_avg
+                
                 
         return total_accuracy / len(validation_loader), total_time / len(validation_loader), total_exit_index_taken / len(validation_loader)
     
