@@ -177,7 +177,7 @@ class ModelTrainer:
             self.progress_bar.set_postfix({"Loss": loss.item()})
                 
             # Optionally, calculate validation metrics
-            if validation_loader is not None and i % 10 == 0:
+            if validation_loader is not None and (i % len(train_loader) / 10) == 0:
                 validation_accuracy, validation_time, exit_idx = self.validate_exit_gates(validation_loader)
               
                 # write to tensorboard
