@@ -16,5 +16,5 @@ class CustomDataset(Dataset):
             sample = sample.convert('RGB')
         if self.transform is not None:
             sample = self.transform(sample)
-        label = record['label']
+        label = record['label'] if 'label' in record else record['fine_label']
         return sample, label

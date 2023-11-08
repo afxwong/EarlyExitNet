@@ -41,6 +41,9 @@ class EarlyExitModel(nn.Module):
             if "features" in attr:
                 edited_attr = attr.replace("features.", "")
                 layer = getattr(self.model.features, edited_attr)
+            elif 'classifier' in attr:
+                edited_attr = attr.replace("classifier.", "")
+                layer = getattr(self.model.classifier, edited_attr)
             else: layer = getattr(self.model, attr)
         self.original_modules[attr] = layer
         optional_exit_module = OptionalExitModule(layer, self.num_outputs)
@@ -50,6 +53,8 @@ class EarlyExitModel(nn.Module):
         else:
             if "features" in attr:
                 setattr(self.model.features, edited_attr, optional_exit_module)
+            elif 'classifier' in attr:
+                setattr(self.model.classifier, edited_attr, optional_exit_module)
             else:
                 setattr(self.model, attr, optional_exit_module)
         self.exit_modules.append(optional_exit_module)

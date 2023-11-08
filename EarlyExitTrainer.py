@@ -99,7 +99,7 @@ class ModelTrainer:
                 self.writer.add_scalar(f'Loss/validation/classifier {i}', validation_loss, epoch)
                 self.writer.add_scalar(f'Accuracy/validation/classifier {i}', validation_accuracy, epoch)
             
-                if self.should_stop_early(validation_accuracies):
+                if self.should_stop_early(validation_accuracies, validation_losses):
                     print("Validation accuracies are decreasing, stopping training early")
                     break   
                 
@@ -292,17 +292,17 @@ class ModelTrainer:
         self.gate_loss_function = EarlyExitGateLoss(self.device, alpha)
         
     
-    def should_stop_early(self, validation_accuracy_list):
-        # return true if we are above 99% accuracy
-        if len(validation_accuracy_list) > 0 and validation_accuracy_list[-1] > 0.99:
-            return True
-        
-        
-        # return true if the last 5 validation accuracies are decreasing
+    def should_stop_early(self, validation_accuracy_list, validation_loss_list):
         if len(validation_accuracy_list) < 5:
             return False
         
-        return validation_accuracy_list[-1] < validation_accuracy_list[-2] < validation_accuracy_list[-3] < validation_accuracy_list[-4] < validation_accuracy_list[-5]
+        # return true if we are above 99% accuracy
+        if validation_accuracy_list[-1] > 0.99:
+            return True
+        
+        # return true if the last validation accuracies are decreasing
+        if validation_accuracy_list[-1] < validation_accuracy_list[-2] < validation_accuracy_list[-3]: 
+            return True
     
     def save_model(self, model_name):
         if not os.path.exists(self.model_dir):
