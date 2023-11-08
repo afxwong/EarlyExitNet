@@ -26,7 +26,7 @@ class EarlyExitModel(nn.Module):
             
     def compute_costs_per_exit_module(self):
         if len(self.exit_modules) == 0:
-            return torch.tensor([1.0], device=self.device)
+            return torch.tensor([0.0], device=self.device)
 
         # Total number of parameters in the model
         total_param_count = sum(p.numel() for p in self.model.parameters())
