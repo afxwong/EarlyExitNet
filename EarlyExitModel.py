@@ -31,23 +31,31 @@ class EarlyExitModel(nn.Module):
         # Total number of parameters in the model
         total_param_count = sum(p.numel() for p in self.model.parameters())
 
-        # Iterate through model layers and compute cost per layer
+        # Initialize lists to store costs and running parameter count
         costs = []
         running_param_count = 0.0
-        for layer in self.model.children():
+
+        # Iterate through model layers and compute cost per layer
+        costs, running_param_count = self.find_exit_layers(self.model, costs, running_param_count)
+
+        # Append the final cost, which represents the entire model
+        costs.append(total_param_count)
+        cost_tensor = torch.tensor(costs, device=self.device)
+        cost_tensor = (cost_tensor - cost_tensor[0]) / (cost_tensor[-1] - cost_tensor[0])
+        return cost_tensor
+
+    def find_exit_layers(self, model, costs, running_param_count):
+        for layer in model.children():
+            if isinstance(layer, nn.Module):
+                costs, running_param_count = self.find_exit_layers(layer, costs, running_param_count)
             if isinstance(layer, OptionalExitModule):
                 # Add the parameters of the exit layer's original module rather than the exit layer itself
                 running_param_count += sum(p.numel() for p in layer.module.parameters())
-                costs.append(running_param_count / total_param_count)
+                costs.append(running_param_count)
             else:
                 running_param_count += sum(p.numel() for p in layer.parameters())
+        return costs, running_param_count
 
-        # Append the final cost, which represents the entire model
-        costs.append(1.0)
-        cost_tensor = torch.tensor(costs, device=self.device)
-        cost_tensor -= cost_tensor[0]
-        cost_tensor /= cost_tensor[-1]
-        return cost_tensor
 
     def clear_exits(self):
         # replaces wrapped modules with original module

@@ -99,7 +99,7 @@ class ModelTrainer:
                 self.writer.add_scalar(f'Loss/validation/classifier {i}', validation_loss, epoch)
                 self.writer.add_scalar(f'Accuracy/validation/classifier {i}', validation_accuracy, epoch)
             
-                if self.should_stop_early(validation_accuracies, validation_losses):
+                if self.should_stop_early(validation_accuracies):
                     print("Validation accuracies are decreasing, stopping training early")
                     break   
                 
@@ -137,7 +137,7 @@ class ModelTrainer:
         self.writer.flush()
            
     # MARK: - Training Exits
-    def train_exit_epoch(self, train_loader, epoch, validation_loader=None):
+    def train_exit_epoch(self, train_loader, lr, epoch, validation_loader=None):
         self.model.train()
         
         net_loss = 0.0
@@ -159,7 +159,7 @@ class ModelTrainer:
                 else:
                     trainable_params += list(filter(lambda p: p.requires_grad, exit_layer.exit_gate.parameters()))
             
-            optimizer = torch.optim.Adam(trainable_params, lr=0.00000001)
+            optimizer = torch.optim.Adam(trainable_params, lr=lr)
             
             optimizer.zero_grad()
             
@@ -174,7 +174,7 @@ class ModelTrainer:
             self.progress_bar.set_postfix({"Loss": loss.item()})
                 
             # Optionally, calculate validation metrics
-            if validation_loader is not None and (i % len(train_loader) / 10) == 0:
+            if validation_loader is not None and i % (len(train_loader) // 10) == 0:
                 validation_accuracy, validation_time, exit_idx = self.validate_exit_gates(validation_loader)
               
                 # write to tensorboard
@@ -192,7 +192,7 @@ class ModelTrainer:
             
         return net_loss / len(train_loader), validation_accuracy, validation_time, exit_idx
             
-    def train_exit_layers(self, train_loader, epoch_count=1, validation_loader=None):
+    def train_exit_layers(self, train_loader, lr, epoch_count=1, validation_loader=None):
         validation_accuracies = []
         validation_times = []
         exit_idx_runs = []
@@ -203,7 +203,7 @@ class ModelTrainer:
             
             # set model state
             self.model.set_state(TrainingState.TRAIN_EXIT)
-            loss, validation_accuracy, validation_time, exit_idx = self.train_exit_epoch(train_loader, epoch, validation_loader)
+            loss, validation_accuracy, validation_time, exit_idx = self.train_exit_epoch(train_loader, lr, epoch, validation_loader)
             validation_accuracies.append(validation_accuracy)
             validation_times.append(validation_time)
             exit_idx_runs.append(exit_idx)
@@ -289,9 +289,11 @@ class ModelTrainer:
         self.gate_loss_function = EarlyExitGateLoss(self.device, alpha)
         
     
-    def should_stop_early(self, validation_accuracy_list, validation_loss_list):
+    def should_stop_early(self, validation_accuracy_list):
         if len(validation_accuracy_list) < 5:
             return False
+        
+        print(validation_accuracy_list[:-3])
         
         # return true if we are above 99% accuracy
         if validation_accuracy_list[-1] > 0.99:
@@ -300,6 +302,7 @@ class ModelTrainer:
         # return true if the last validation accuracies are decreasing
         if validation_accuracy_list[-1] < validation_accuracy_list[-2] < validation_accuracy_list[-3]: 
             return True
+        return False
     
     def save_model(self, model_name):
         if not os.path.exists(self.model_dir):
