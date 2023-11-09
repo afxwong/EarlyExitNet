@@ -24,8 +24,7 @@ class OptionalExitModule(nn.Module):
         
     def set_state(self, state):
         self.state = state
-        
-        
+          
     def forward_train_classifier_forward(self, X, X_flat):
         # roll every sample forward (entire batch) to next module
         return self.module(X)
