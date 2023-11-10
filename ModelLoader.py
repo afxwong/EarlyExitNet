@@ -6,6 +6,7 @@ from EarlyStopException import EarlyExitException
 import os
 import shutil
 import pickle
+from densenet.DenseNet import DenseNet, Bottleneck
 
 class ModelLoader:
     
@@ -34,7 +35,7 @@ class ModelLoader:
         from cifar10_models import vgg
         
     def validate_model_type(self, model_type):
-        if model_type not in ["resnet", "vgg_cifar10", "vgg_cifar100"]:
+        if model_type not in ["resnet", "vgg_cifar10", "vgg_cifar100", "densenet_cifar100"]:
             raise Exception("Model type {} not supported.".format(model_type))
         
     def load_model(self, num_outputs, trained_classifiers=False, pretrained=False):
@@ -52,6 +53,8 @@ class ModelLoader:
             model = self.load_vgg_cifar10(num_outputs, should_add_layers)
         elif self.model_type == 'vgg_cifar100':
             model = self.load_vgg_cifar100(num_outputs, should_add_layers)
+        elif self.model_type == 'densenet_cifar100':
+            model = self.load_densenet_cifar100(num_outputs, should_add_layers)
             
         # reset the states
         model.set_state(TrainingState.INFER)
@@ -143,5 +146,23 @@ class ModelLoader:
         
         model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
         self.add_exits(model, ['features.8', 'features.15', 'features.22', "classifier.0"], pretrained)
+        
+        return model
+    
+    def load_densenet_cifar100(self, num_outputs, pretrained=False):
+        print(f"Loading EarlyExit DenseNet121 model architecture...")
+        densenet = DenseNet(Bottleneck, [6, 12, 24, 16], growth_rate=12, num_classes=100)
+        model_path = os.path.join('models', self.model_type, 'densenet_cifar100.pth')
+        densenet.load_state_dict(torch.load(model_path))
+        densenet.ee_classifiers = None
+        densenet.ee_layer_locations = []
+        # set requires_grad to False to freeze the parameters
+        for param in densenet.parameters():
+            param.requires_grad = False
+        model = EarlyExitModel(densenet, num_outputs, self.device)
+        model.clear_exits()
+        
+        model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
+        self.add_exits(model, ['dense2', 'dense3', 'dense4'], pretrained)
         
         return model
