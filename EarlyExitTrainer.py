@@ -105,7 +105,7 @@ class ModelTrainer:
                 
                 if validation_accuracy > max_accuracy:
                     max_accuracy = validation_accuracy
-                    self.save_model(f'exit_{i+1}_classifier.pkl')
+                    self.save_model(f'exit_{i+1}_classifier.pth')
             
         # train the final classifier
         print("Training final classifier")
@@ -133,7 +133,7 @@ class ModelTrainer:
             
             if validation_accuracy > max_accuracy:
                 max_accuracy = validation_accuracy    
-                self.save_model(f'final_classifier.pkl')
+                self.save_model(f'final_classifier.pth')
         self.writer.flush()
            
     # MARK: - Training Exits
@@ -221,7 +221,7 @@ class ModelTrainer:
                 max_accuracy = validation_accuracy
                 # save the model
                 alpha_without_decimals = str(self.alpha).replace('.', '_')
-                self.save_model(f'full_model_with_exit_gates_alpha_{alpha_without_decimals}.pkl')
+                self.save_model(f'full_model_with_exit_gates_alpha_{alpha_without_decimals}.pth')
             self.writer.flush()
             
         return validation_accuracies[-1], validation_times[-1], exit_idx_runs[-1]
@@ -272,8 +272,8 @@ class ModelTrainer:
                 weights = torch.arange(len(exits_taken_count), device=self.device) + 1
 
                 weighted_avg = (torch.sum(exits_taken_count * weights)).item() / len(X_val)
-
-                self.progress_bar.set_postfix({"Accuracy": val_accuracy, "Time": totaltime, 
+                if self.progress_bar is not None:
+                    self.progress_bar.set_postfix({"Accuracy": val_accuracy, "Time": totaltime, 
                                                "Avg Exit Idx": weighted_avg})
                 
                 total_accuracy += val_accuracy
@@ -293,8 +293,6 @@ class ModelTrainer:
         if len(validation_accuracy_list) < 5:
             return False
         
-        print(validation_accuracy_list[:-3])
-        
         # return true if we are above 99% accuracy
         if validation_accuracy_list[-1] > 0.99:
             return True
@@ -307,7 +305,7 @@ class ModelTrainer:
     def save_model(self, model_name):
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
-        pickle.dump(self.model, open(os.path.join(self.model_dir, model_name), 'wb'))
+        torch.save(self.model.state_dict(), os.path.join(self.model_dir, model_name))
         
     def load_model(self, model_name):
         self.model = pickle.load(open(os.path.join(self.model_dir, model_name), 'rb'))

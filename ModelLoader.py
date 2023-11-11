@@ -153,12 +153,13 @@ class ModelLoader:
         print(f"Loading EarlyExit DenseNet121 model architecture...")
         densenet = DenseNet(Bottleneck, [6, 12, 24, 16], growth_rate=12, num_classes=100)
         model_path = os.path.join('models', self.model_type, 'densenet_cifar100.pth')
-        densenet.load_state_dict(torch.load(model_path))
+        densenet.load_state_dict(torch.load(model_path, map_location='cpu'))
         densenet.ee_classifiers = None
         densenet.ee_layer_locations = []
         # set requires_grad to False to freeze the parameters
         for param in densenet.parameters():
             param.requires_grad = False
+        densenet.linear = nn.Linear(densenet.linear.in_features, num_outputs)
         model = EarlyExitModel(densenet, num_outputs, self.device)
         model.clear_exits()
         

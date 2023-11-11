@@ -40,18 +40,19 @@ class EarlyExitModel(nn.Module):
 
         # Append the final cost, which represents the entire model
         costs.append(total_param_count)
+        print(costs)
         cost_tensor = torch.tensor(costs, device=self.device)
         cost_tensor = (cost_tensor - cost_tensor[0]) / (cost_tensor[-1] - cost_tensor[0])
         return cost_tensor
 
     def find_exit_layers(self, model, costs, running_param_count):
         for layer in model.children():
-            if isinstance(layer, nn.Module):
-                costs, running_param_count = self.find_exit_layers(layer, costs, running_param_count)
             if isinstance(layer, OptionalExitModule):
                 # Add the parameters of the exit layer's original module rather than the exit layer itself
                 running_param_count += sum(p.numel() for p in layer.module.parameters())
                 costs.append(running_param_count)
+            elif isinstance(layer, nn.Module):
+                costs, running_param_count = self.find_exit_layers(layer, costs, running_param_count)
             else:
                 running_param_count += sum(p.numel() for p in layer.parameters())
         return costs, running_param_count
@@ -143,13 +144,14 @@ class EarlyExitModel(nn.Module):
             self.num_exits_per_module = []
             
             for exit_module in self.exit_modules:
+                if len(remaining_idx) == 0 or len(exit_module.exit_taken_idx) == 0:
+                    self.num_exits_per_module.append(0)
+                    continue
+
                 try:
                     self.num_exits_per_module.append(len(exit_module.exit_taken_idx))
                 except:
                     self.num_exits_per_module.append(0)
-                    
-                if len(remaining_idx) == 0: break
-                if len(exit_module.exit_taken_idx) == 0: continue
                 
                 # use indices of exits taken in the model's (reduced) batched to obtain the translated original index within the original batch
                 original_idx = remaining_idx[exit_module.exit_taken_idx]
