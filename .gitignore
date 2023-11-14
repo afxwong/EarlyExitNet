@@ -1,3 +1,7 @@
+data_vis/*
+cifar10_models/*
+**/runs/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

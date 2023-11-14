@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from EarlyStopException import EarlyExitException
+import time
 
 from enum import Enum
 
@@ -18,9 +19,12 @@ class OptionalExitModule(nn.Module):
         self.module = module
         self.state = TrainingState.INFER
        
+        self.exit_taken_idx = torch.tensor([], dtype=torch.long)
         self.num_outputs = num_outputs
         self.exit_gate = None
         self.classifier = None
+        
+        self.gate_time = 0
         
     def set_state(self, state):
         self.state = state
@@ -44,28 +48,34 @@ class OptionalExitModule(nn.Module):
             self.y_hat = self.classifier(X_flat)
         
         return self.module(X)
-    
+       
+    def dispatch_inference(self, X_flat, starttime):
+        if not self.exit_taken_idx.any(): return
         
-    def forward_infer(self, X, X_flat):
-        
-        batch_size, _ = X_flat.shape
-        
-        # form (batch_size, ) vector of exit confidences
-        self.exit_confidences = torch.sigmoid(torch.flatten(self.exit_gate(X_flat)))
-        
-        exit_mask = self.exit_confidences > 0.5
-        self.exit_taken_idx = torch.where(exit_mask)[0]
-        num_exits_taken = len(self.exit_taken_idx)
-
-        if num_exits_taken > 0:
-            X_classify = X_flat[exit_mask]
-            self.y_hat = self.classifier(X_classify)
-
-        if num_exits_taken == batch_size:
-            # self.y_hat will have classificaiton results to collect later on
+        if X_flat.is_cuda:
+            if self.stream is None:
+                self.stream = torch.cuda.Stream()
+            with torch.cuda.stream(self.stream):
+                self.y_hat = self.classifier(X_flat[self.exit_taken_idx])
+        else:
+            self.y_hat = self.classifier(X_flat[self.exit_taken_idx])
+            
+        if len(X_flat[self.exit_taken_idx]) == len(X_flat):
+            # self.y_hat will have classification results to collect later on
+            self.gate_time = time.time() - starttime
             raise EarlyExitException(y_hat=self.y_hat)
-
-        return self.module(X[~exit_mask])
+            
+    
+    def forward_infer(self, X, X_flat):
+        starttime = time.time()
+        batch_size, _ = X_flat.shape
+        # form (batch_size, ) vector of exit confidencesx
+        self.exit_confidences = self.exit_gate(X_flat).flatten()
+        self.exit_taken_idx = torch.relu(self.exit_confidences).to(torch.bool)
+        self.dispatch_inference(X_flat, starttime)
+            
+        self.gate_time = time.time() - starttime
+        return self.module(X[~self.exit_taken_idx])
         
     def forward(self, X):
         
@@ -83,13 +93,10 @@ class OptionalExitModule(nn.Module):
         
         if self.state == TrainingState.TRAIN_CLASSIFIER_EXIT:
             return self.forward_train_classifier_exit(X, X_flat)
-        
-        if self.state == TrainingState.TRAIN_CLASSIFIER_FORWARD:
+        elif self.state == TrainingState.TRAIN_CLASSIFIER_FORWARD:
             return self.forward_train_classifier_forward(X, X_flat)
-        
-        if self.state == TrainingState.TRAIN_EXIT:
+        elif self.state == TrainingState.TRAIN_EXIT:
             return self.forward_train_exit(X, X_flat)
-        
         if self.state == TrainingState.INFER:
             return self.forward_infer(X, X_flat)
         

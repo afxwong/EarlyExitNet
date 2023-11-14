@@ -69,7 +69,7 @@ class ModelLoader:
                 model_name = f"final_classifier.pth"
             state_dict_path = os.path.join('models', self.model_type, model_name)   
             assert os.path.exists(state_dict_path), f"State dict path {state_dict_path} does not exist"
-            model.load_state_dict(torch.load(state_dict_path))
+            model.load_state_dict(torch.load(state_dict_path, map_location='cpu'))
             
         model.to(self.device)
         return model

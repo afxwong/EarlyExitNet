@@ -40,7 +40,6 @@ class EarlyExitModel(nn.Module):
 
         # Append the final cost, which represents the entire model
         costs.append(total_param_count)
-        print(costs)
         cost_tensor = torch.tensor(costs, device=self.device)
         cost_tensor = (cost_tensor - cost_tensor[0]) / (cost_tensor[-1] - cost_tensor[0])
         return cost_tensor
@@ -101,30 +100,26 @@ class EarlyExitModel(nn.Module):
         last_layer_y_hat = None
         
         # y_hat of layer where there are no remaining images to push forward in the model. All samples have exited
-        final_exit_y_hat = None
+        early_exit_y_hat = None
         try:
             last_layer_y_hat = self.model(X)
         except EarlyExitException as e:
-            final_exit_y_hat = e.y_hat
+            early_exit_y_hat = e.y_hat
         
         if self.state == TrainingState.TRAIN_CLASSIFIER_EXIT or self.state == TrainingState.TRAIN_CLASSIFIER_FORWARD:
-    
             if last_layer_y_hat is not None:
                 # if forward pass made it to the back of the layer, get the last layer y_hat
                 return last_layer_y_hat
             
             # if exit occured before last classifier, get y_hat where exit occured
-            return final_exit_y_hat
+            return early_exit_y_hat
         
         
         if self.state == TrainingState.TRAIN_EXIT:
-            
-            assert last_layer_y_hat is not None, "forward propagation should have made it to the end of the model"
+            assert last_layer_y_hat is not None, "Forward propagation should have made it to the end of the model"
             
             y_hats = torch.empty((batch_size, len(self.exit_modules) + 1, self.num_outputs), device=self.device)
             exit_confidences = torch.empty((batch_size, len(self.exit_modules)), device=self.device)
-            
-            # TODO: set cost constant for each layer later
             
             for i, exit_module in enumerate(self.exit_modules):
                 y_hats[:, i] = exit_module.y_hat
@@ -136,31 +131,29 @@ class EarlyExitModel(nn.Module):
         
         
         if self.state == TrainingState.INFER:
+            if torch.cuda.is_available():
+                torch.cuda.synchronize() # wait for all classifiers to be done
             
             y_hat = torch.empty((batch_size, self.num_outputs), device=self.device)
             
-            remaining_idx = torch.arange(batch_size).to(self.device)
+            remaining_idx = torch.arange(batch_size, device=self.device)
             
             self.num_exits_per_module = []
             
             for exit_module in self.exit_modules:
-                if len(remaining_idx) == 0 or len(exit_module.exit_taken_idx) == 0:
+                if len(remaining_idx) == 0:
                     self.num_exits_per_module.append(0)
                     continue
 
-                try:
-                    self.num_exits_per_module.append(len(exit_module.exit_taken_idx))
-                except:
-                    self.num_exits_per_module.append(0)
-                
                 # use indices of exits taken in the model's (reduced) batched to obtain the translated original index within the original batch
                 original_idx = remaining_idx[exit_module.exit_taken_idx]
-                y_hat[original_idx] = exit_module.y_hat
+                self.num_exits_per_module.append(len(original_idx))
+                
+                if original_idx.shape[0] > 0:
+                    y_hat[original_idx] = exit_module.y_hat
                 
                 # mirroring how the batch is reduced by the exit module, reduce index look up array the same way
-                to_keep = torch.ones(remaining_idx.shape)
-                to_keep[exit_module.exit_taken_idx] = 0
-                remaining_idx = remaining_idx[to_keep == 1]
+                remaining_idx = torch.where(~exit_module.exit_taken_idx)[0]
                 
             # if even after going through each early exit layer, there are samples that did not exit, grab the y_hat from terminal classifier
             if len(remaining_idx) > 0:
