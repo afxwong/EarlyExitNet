@@ -56,9 +56,6 @@ class ModelLoader:
         elif self.model_type == 'densenet_cifar100':
             model = self.load_densenet_cifar100(num_outputs, should_add_layers)
             
-        # reset the states
-        model.set_state(TrainingState.INFER)
-            
         # load prior model state if needed
         if pretrained or trained_classifiers:
             print("Setting model weights...")
@@ -70,6 +67,9 @@ class ModelLoader:
             state_dict_path = os.path.join('models', self.model_type, model_name)   
             assert os.path.exists(state_dict_path), f"State dict path {state_dict_path} does not exist"
             model.load_state_dict(torch.load(state_dict_path, map_location='cpu'))
+            
+        # reset the states
+        model.set_state(TrainingState.INFER)
             
         model.to(self.device)
         return model
