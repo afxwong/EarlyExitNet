@@ -69,9 +69,9 @@ class OptionalExitModule(nn.Module):
     def forward_infer(self, X, X_flat):
         starttime = time.time()
         batch_size, _ = X_flat.shape
-        # form (batch_size, ) vector of exit confidencesx
-        self.exit_confidences = self.exit_gate(X_flat).flatten()
-        self.exit_taken_idx = torch.relu(self.exit_confidences).to(torch.bool)
+        # form (batch_size, ) vector of exit confidences
+        self.exit_confidences = torch.sigmoid(self.exit_gate(X_flat).flatten())
+        self.exit_taken_idx = self.exit_confidences > 0.5
         self.dispatch_inference(X_flat, starttime)
             
         self.gate_time = time.time() - starttime

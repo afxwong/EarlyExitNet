@@ -145,19 +145,24 @@ class EarlyExitModel(nn.Module):
                     self.num_exits_per_module.append(0)
                     continue
 
+                self.num_exits_per_module.append(exit_module.exit_taken_idx.sum().item())
+                
                 # use indices of exits taken in the model's (reduced) batched to obtain the translated original index within the original batch
                 original_idx = remaining_idx[exit_module.exit_taken_idx]
-                self.num_exits_per_module.append(len(original_idx))
-                
-                if original_idx.shape[0] > 0:
-                    y_hat[original_idx] = exit_module.y_hat
+                if len(original_idx) == 0: continue
+                y_hat[original_idx] = exit_module.y_hat
                 
                 # mirroring how the batch is reduced by the exit module, reduce index look up array the same way
-                remaining_idx = torch.where(~exit_module.exit_taken_idx)[0]
+                # to_keep = torch.ones(remaining_idx.shape)
+                # to_keep[exit_module.exit_taken_idx] = 0
+                # remaining_idx = remaining_idx[to_keep == 1]
+                remaining_idx = remaining_idx[~exit_module.exit_taken_idx]
                 
             # if even after going through each early exit layer, there are samples that did not exit, grab the y_hat from terminal classifier
             if len(remaining_idx) > 0:
                 y_hat[remaining_idx] = last_layer_y_hat
                 self.num_exits_per_module.append(len(remaining_idx))
+            else:
+                self.num_exits_per_module.append(0)
             
             return y_hat
