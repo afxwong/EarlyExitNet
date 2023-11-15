@@ -25,6 +25,7 @@ class OptionalExitModule(nn.Module):
         self.classifier = None
         
         self.gate_time = 0
+        self.stream = None
         
     def set_state(self, state):
         self.state = state

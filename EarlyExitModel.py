@@ -131,8 +131,9 @@ class EarlyExitModel(nn.Module):
         
         
         if self.state == TrainingState.INFER:
-            if torch.cuda.is_available():
-                torch.cuda.synchronize() # wait for all classifiers to be done
+            if torch.cuda.is_available() and len(self.exit_modules) > 0:
+                for stream in [module.stream for module in self.exit_modules if module.stream is not None]:
+                    stream.synchronize() # wait for all multithreaded classifiers to finish
             
             y_hat = torch.empty((batch_size, self.num_outputs), device=self.device)
             
