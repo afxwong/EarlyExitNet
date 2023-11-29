@@ -119,14 +119,14 @@ class ModelLoader:
     
     def load_vgg_cifar10(self, num_outputs, pretrained=False):
         print(f"Loading EarlyExit VGG11 model architecture...")
-        model_path = os.path.join('models', 'vgg_cifar10', 'vgg11_bn.pkl')
-        vgg = pickle.load(open(model_path, 'rb'))
+        from cifar10_models import vgg
+        vggModel = vgg.vgg11_bn(pretrained=True)
         # set requires_grad to False to freeze the parameters
-        for param in vgg.parameters():
+        for param in vggModel.parameters():
             param.requires_grad = False
-        vgg.classifier[-1] = nn.Linear(vgg.classifier[-1].in_features, num_outputs)
+        vggModel.classifier[-1] = nn.Linear(vggModel.classifier[-1].in_features, num_outputs)
         
-        model = EarlyExitModel(vgg, num_outputs, self.device)
+        model = EarlyExitModel(vggModel, num_outputs, self.device)
         model.clear_exits()
         model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
         self.add_exits(model, ['features.8', 'features.15', 'features.22', 'avgpool'], pretrained)
