@@ -60,7 +60,14 @@ class EarlyExitModel(nn.Module):
     def clear_exits(self):
         # replaces wrapped modules with original module
         for attr, original_module in self.original_modules.items():
-            setattr(self.model, attr, original_module)
+            if "features" in attr:
+                edited_attr = attr.replace("features.", "")
+                setattr(self.model.features, edited_attr, original_module)
+            elif 'classifier' in attr:
+                edited_attr = attr.replace("classifier.", "")
+                setattr(self.model.classifier, edited_attr, original_module)
+            else:
+                setattr(self.model, attr, original_module)
         self.original_modules = {}
         self.exit_modules = []
         self.costs = self.compute_costs_per_exit_module()
