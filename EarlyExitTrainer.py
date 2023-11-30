@@ -35,13 +35,12 @@ class ModelTrainer:
         
         self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
+        trainable_params = filter(lambda p: p.requires_grad, self.model.parameters())
+        optimizer = torch.optim.Adam(trainable_params, lr=0.0001)
         for i, (X, y) in enumerate(self.progress_bar):
             X = X.to(self.device)
             y = y.to(self.device)
             y_hat = self.model(X)
-            
-            trainable_params = filter(lambda p: p.requires_grad, self.model.parameters())
-            optimizer = torch.optim.Adam(trainable_params, lr=0.0001)
             
             optimizer.zero_grad()
             
@@ -116,7 +115,6 @@ class ModelTrainer:
             self.model.exit_modules[i].set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
             
         for epoch in range(epoch_count):
-            # TODO: bail out early if last 5 validation accuracies are decreasing
             loss, accuracy, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
             validation_losses.append(validation_loss)
             validation_accuracies.append(validation_accuracy)
@@ -146,25 +144,21 @@ class ModelTrainer:
         
         self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
+        # concatenate trainable parameters as all gate layers
+        trainable_params = [
+            list(filter(lambda p: p.requires_grad, exit_layer.exit_gate.parameters())) 
+            for exit_layer in self.model.exit_modules]
+        
+        optimizer = torch.optim.Adam(trainable_params, lr=lr)
+        
         for i, (X, y) in enumerate(self.progress_bar):
             X = X.to(self.device)
             y = y.to(self.device)
             y_hats, exit_confidences = self.model(X)
             
-            trainable_params = None
-            # concatenate all trainable parameters as gate layers
-            for exit_layer in self.model.exit_modules:
-                if trainable_params is None:
-                    trainable_params = list(filter(lambda p: p.requires_grad, exit_layer.exit_gate.parameters()))
-                else:
-                    trainable_params += list(filter(lambda p: p.requires_grad, exit_layer.exit_gate.parameters()))
-            
-            optimizer = torch.optim.Adam(trainable_params, lr=lr)
-            
             optimizer.zero_grad()
             
             loss, ce_part, cost_part = self.gate_loss_function(y, y_hats, exit_confidences, self.model.costs)
-            
             net_loss += loss.item()
 
             loss.backward()
@@ -182,11 +176,11 @@ class ModelTrainer:
                 self.writer.add_scalar(f'Loss Part 1/alpha={self.alpha}/exit gates', ce_part.item(), (epoch * len(train_loader) + i))
                 self.writer.add_scalar(f'Loss Part 2/alpha={self.alpha}/exit gates', cost_part.item(), (epoch * len(train_loader) + i))
 
-                
-
                 self.writer.add_scalar(f'Accuracy/alpha={self.alpha}/exit gates', validation_accuracy, (epoch * len(train_loader) + i))
                 self.writer.add_scalar(f'Time/alpha={self.alpha}/exit gates', validation_time, (epoch * len(train_loader) + i))
                 self.writer.add_scalar(f'Exit Idx/alpha={self.alpha}/exit gates', exit_idx, (epoch * len(train_loader) + i))
+                
+                # reset to training mode for next batch
                 self.model.train()
                 self.model.set_state(TrainingState.TRAIN_EXIT)
             
@@ -203,7 +197,7 @@ class ModelTrainer:
             
             # set model state
             self.model.set_state(TrainingState.TRAIN_EXIT)
-            loss, validation_accuracy, validation_time, exit_idx = self.train_exit_epoch(train_loader, lr, epoch, validation_loader)
+            _, validation_accuracy, validation_time, exit_idx = self.train_exit_epoch(train_loader, lr, epoch, validation_loader)
             validation_accuracies.append(validation_accuracy)
             validation_times.append(validation_time)
             exit_idx_runs.append(exit_idx)
@@ -222,6 +216,7 @@ class ModelTrainer:
                 # save the model
                 alpha_without_decimals = str(self.alpha).replace('.', '_')
                 self.save_model(f'full_model_with_exit_gates_alpha_{alpha_without_decimals}.pth')
+
             self.writer.flush()
             
         return validation_accuracies[-1], validation_times[-1], exit_idx_runs[-1]
@@ -259,7 +254,7 @@ class ModelTrainer:
         total_exit_index_taken = 0.0
         
         with torch.no_grad():
-            for i, (X_val, y_val) in enumerate(validation_loader):
+            for (X_val, y_val) in validation_loader:
                 starttime = time.time()
                 X_val = X_val.to(self.device)
                 y_val = y_val.to(self.device)
@@ -279,8 +274,7 @@ class ModelTrainer:
                 total_accuracy += val_accuracy
                 total_time += totaltime
                 total_exit_index_taken += weighted_avg
-                
-                
+                       
         return total_accuracy / len(validation_loader), total_time / len(validation_loader), total_exit_index_taken / len(validation_loader)
     
     # MARK: - Utils
@@ -306,6 +300,3 @@ class ModelTrainer:
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
         torch.save(self.model.state_dict(), os.path.join(self.model_dir, model_name))
-        
-    def load_model(self, model_name):
-        self.model = pickle.load(open(os.path.join(self.model_dir, model_name), 'rb'))

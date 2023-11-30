@@ -20,7 +20,6 @@ class ModelLoader:
         self.device = device
         
     def download_cifar10(self):
-        # TODO: replace this 
         if not os.path.exists('cifar10_models'):
             # run command
             os.system("git clone https://github.com/huyvnphan/PyTorch_CIFAR10")
@@ -32,7 +31,6 @@ class ModelLoader:
             try:
                 shutil.rmtree("PyTorch_CIFAR10")
             except: pass
-        from cifar10_models import vgg
         
     def validate_model_type(self, model_type):
         if model_type not in ["resnet", "vgg_cifar10", "vgg_cifar100", "densenet_cifar100"]:
@@ -80,7 +78,7 @@ class ModelLoader:
             X, _ = next(iter(self.dataloader))
         
         for layer in exit_layer_attrs:
-            model.add_exit(layer, self.model_type)
+            model.add_exit(layer)
         
             if not should_add_layers: continue
             # now since we don't know the shape of the input, we need to run a forward pass
@@ -96,9 +94,7 @@ class ModelLoader:
             # run one data batch to create classifiers with proper shape
             try:
                 model.model(X)
-            except EarlyExitException: 
-                pass
-        
+            except EarlyExitException: pass
        
     def load_resnet(self, num_outputs, pretrained=False):
         print(f"Loading EarlyExit ResNet50 model architecture...")
