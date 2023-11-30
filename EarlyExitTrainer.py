@@ -145,10 +145,9 @@ class ModelTrainer:
         self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
         
         # concatenate trainable parameters as all gate layers
-        trainable_params = [
-            list(filter(lambda p: p.requires_grad, exit_layer.exit_gate.parameters())) 
-            for exit_layer in self.model.exit_modules]
-        
+        trainable_params = []
+        for exit_layer in self.model.exit_modules:
+            trainable_params += list(filter(lambda p: p.requires_grad, exit_layer.exit_gate.parameters()))
         optimizer = torch.optim.Adam(trainable_params, lr=lr)
         
         for i, (X, y) in enumerate(self.progress_bar):

@@ -5,32 +5,16 @@ from EarlyExitModel import EarlyExitModel, TrainingState
 from EarlyStopException import EarlyExitException
 import os
 import shutil
-import pickle
-from densenet.DenseNet import DenseNet, Bottleneck
+from model_architectures import VGG_CIFAR10, DenseNet
 
 class ModelLoader:
     
-    def __init__(self, model_type, device, alpha=None, dataloader=None):
-        self.download_cifar10()
-        
+    def __init__(self, model_type, device, alpha=None, dataloader=None):        
         self.validate_model_type(model_type) # ensure correct model type
         self.model_type = model_type
         self.dataloader = dataloader
         self.alpha = alpha
         self.device = device
-        
-    def download_cifar10(self):
-        if not os.path.exists('cifar10_models'):
-            # run command
-            os.system("git clone https://github.com/huyvnphan/PyTorch_CIFAR10")
-    
-            # copy cifar10_models folder to current directory
-            shutil.copytree(os.path.join("PyTorch_CIFAR10", "cifar10_models"), "cifar10_models")
-            
-            # delete the cloned repo
-            try:
-                shutil.rmtree("PyTorch_CIFAR10")
-            except: pass
         
     def validate_model_type(self, model_type):
         if model_type not in ["resnet", "vgg_cifar10", "vgg_cifar100", "densenet_cifar100"]:
@@ -115,8 +99,7 @@ class ModelLoader:
     
     def load_vgg_cifar10(self, num_outputs, pretrained=False):
         print(f"Loading EarlyExit VGG11 model architecture...")
-        from cifar10_models import vgg
-        vggModel = vgg.vgg11_bn(pretrained=True)
+        vggModel = VGG_CIFAR10.vgg11_bn(pretrained=True)
         # set requires_grad to False to freeze the parameters
         for param in vggModel.parameters():
             param.requires_grad = False
@@ -147,11 +130,7 @@ class ModelLoader:
     
     def load_densenet_cifar100(self, num_outputs, pretrained=False):
         print(f"Loading EarlyExit DenseNet121 model architecture...")
-        densenet = DenseNet(Bottleneck, [6, 12, 24, 16], growth_rate=12, num_classes=100)
-        model_path = os.path.join('models', self.model_type, 'densenet_cifar100.pth')
-        densenet.load_state_dict(torch.load(model_path, map_location='cpu'))
-        densenet.ee_classifiers = None
-        densenet.ee_layer_locations = []
+        densenet = DenseNet.densenet121(num_classes=num_outputs, pretrained=True)
         # set requires_grad to False to freeze the parameters
         for param in densenet.parameters():
             param.requires_grad = False

@@ -4,6 +4,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import os
 
 
 class Bottleneck(nn.Module):
@@ -95,3 +96,13 @@ class DenseNet(nn.Module):
         out = self.linear(out)
         
         return out
+    
+def densenet121(num_classes, pretrained=False):
+    model = DenseNet(Bottleneck, [6, 12, 24, 16], growth_rate=12, num_classes=num_classes)
+    if pretrained:
+        script_dir = os.path.dirname(__file__)
+        state_dict = torch.load(
+            os.path.join(script_dir, "state_dicts", "densenet121_cifar100.pth"), map_location="cpu"
+        )
+        model.load_state_dict(state_dict)
+    return model
