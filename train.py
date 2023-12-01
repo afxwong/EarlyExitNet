@@ -38,7 +38,7 @@ class Runner:
         logging.info(f"Using device: {self.device}")
         
     def get_dataloader(self):
-        self.dataloader = CustomDataLoader(num_workers=self.args.workers)
+        self.dataloader = CustomDataLoader(args=self.args)
         self.train_dataloader, self.test_dataloader, _ = self.dataloader.get_dataset(
             self.args.data, self.args.batch_size, self.args.test_batch_size)
         
@@ -50,10 +50,6 @@ class Runner:
         self.trainer = ModelTrainer(self.model, self.device, self.args.save_path)
         self.trainer.train_classifiers(self.train_dataloader, epoch_count=self.args.classifier_epochs, validation_loader=self.test_dataloader)
         
-        
-        
-    def train_classifier_heads(self):
-        pass
         
 if __name__ == "__main__":
     runner = Runner(arg_parser.parse_args())

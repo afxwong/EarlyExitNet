@@ -54,8 +54,7 @@ arch_group.add_argument('--arch', '-a', metavar='ARCH', default='resnet50',
                              ' (default: resnet50)')
 
 # training related
-optim_group = arg_parser.add_argument_group('optimization',
-                                            'optimization setting')
+optim_group = arg_parser.add_argument_group('optimization', 'optimization setting')
 optim_group.add_argument('-b', '--batch-size', default=32, type=int, help='batch size for train dataloader')
 optim_group.add_argument('-tb', '--test-batch-size', default=32, type=int, help='batch size for test dataloader')
 optim_group.add_argument('--classifier-epochs', default=30, type=int, metavar='N',
@@ -64,8 +63,8 @@ optim_group.add_argument('--classifier-epochs', default=30, type=int, metavar='N
 # inference related
 optim_group = arg_parser.add_argument_group('inference', 'inference setting')
 optim_group.add_argument('--alpha', default=0.5, type=float, metavar='N',
-                        help='alpha value for training classification layers')
-optim_group.add_argument('--gate-epochs', default=30, type=int, metavar='N',
+                        help='alpha value for training gate layers')
+optim_group.add_argument('--gate-epochs', default=3, type=int, metavar='N',
                          help='manual epoch number (useful on restarts)')
 # optim_group.add_argument('--val_budget', type=float,
 #                          help='average inference budget per sample, scans range if not provided')

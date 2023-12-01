@@ -37,7 +37,7 @@ class ModelLoader:
             model = self.load_vgg_cifar10(num_outputs, should_add_layers)
         elif self.model_type == 'vgg11_bn' and self.dataset == 'cifar100':
             model = self.load_vgg_cifar100(num_outputs, should_add_layers)
-        elif self.model_type == 'dense121':
+        elif self.model_type == 'densenet121' and self.dataset == 'cifar100':
             model = self.load_densenet_cifar100(num_outputs, should_add_layers)
         else:
             raise Exception("Model type {} not supported.".format(self.model_type))

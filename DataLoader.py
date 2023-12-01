@@ -23,9 +23,10 @@ class CustomDataset(Dataset):
     
     
 class CustomDataLoader:
-    def __init__(self, num_workers=4):
+    def __init__(self, args):
         self.dataset = None
-        self.num_workers = num_workers
+        self.num_workers = args.workers
+        self.image_size = args.image_size
         
     def get_dataset(self, dataset_name, batch_size=None, test_batch_size=None):
         if dataset_name == "imagenette":
@@ -33,7 +34,7 @@ class CustomDataLoader:
             hf_dataset = load_dataset("frgfm/imagenette", '320px')
             hf_dataset = concatenate_datasets(hf_dataset.values())
             transform = transforms.Compose([
-                transforms.Resize((224, 224)),
+                transforms.Resize(self.image_size),
                 transforms.ToTensor(),
             ])
 
@@ -43,7 +44,7 @@ class CustomDataLoader:
             hf_dataset = concatenate_datasets(hf_dataset.values())
             
             transform = transforms.Compose([
-                transforms.Resize((32, 32)),
+                transforms.Resize(self.image_size),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.507, 0.4865, 0.4409],
                                     std=[0.2673, 0.2564, 0.2761])
@@ -54,7 +55,7 @@ class CustomDataLoader:
             hf_dataset = concatenate_datasets(hf_dataset.values())
             
             transform = transforms.Compose([
-                transforms.Resize((32, 32)),
+                transforms.Resize(self.image_size),
                 transforms.ToTensor(),
             ])
         else:
