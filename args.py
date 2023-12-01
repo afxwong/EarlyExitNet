@@ -33,7 +33,8 @@ exp_group = arg_parser.add_argument_group('exp', 'experiment setting')
 exp_group.add_argument('--save-path', default=None,
                        type=str, metavar='SAVE',
                        help='path to the experiment logging directory')
-exp_group.add_argument('--use_gpu', default=True, type=bool, help='Use CPU if False')
+exp_group.add_argument('--use_gpu', default=True, type=bool, 
+                       choices=logging._nameToLevel.keys() , help='Use CPU if False')
 exp_group.add_argument('--log-level', default="INFO", type=str, help='Logging level')
 
 # dataset related

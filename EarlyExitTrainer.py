@@ -34,7 +34,7 @@ class ModelTrainer:
         validation_loss = 0.0
         validation_accuracy = 0.0
         
-        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
+        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', dynamic_ncols=True, leave=True)
         
         trainable_params = filter(lambda p: p.requires_grad, self.model.parameters())
         optimizer = torch.optim.Adam(trainable_params, lr=0.0001)
@@ -57,15 +57,15 @@ class ModelTrainer:
             # Update and display the progress bar at the end of each epoch
             self.progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
         
-        logging.info(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
-        logging.info(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
+        logging.debug(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
+        logging.debug(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
             
 
         # Optionally, calculate validation loss
         if validation_loader is not None:
             validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
-            logging.info(f'Epoch {epoch} Validation Loss {validation_loss}')
-            logging.info(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+            logging.debug(f'Epoch {epoch} Validation Loss {validation_loss}')
+            logging.debug(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
             
         return net_loss / len(train_loader), net_accuracy / len(train_loader), validation_loss, validation_accuracy
         
@@ -142,7 +142,7 @@ class ModelTrainer:
         validation_accuracy = 0.0
         validation_time = 0.0
         
-        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, leave=False)
+        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, dynamic_ncols=False, leave=True)
         
         # concatenate trainable parameters as all gate layers
         trainable_params = []
@@ -201,8 +201,9 @@ class ModelTrainer:
             validation_times.append(validation_time)
             exit_idx_runs.append(exit_idx)
 
-            logging.info(f'Epoch {epoch} Validation Time {validation_time}')
-            logging.info(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+            logging.debug(f'Epoch {epoch} Validation Time {validation_time}')
+            logging.debug(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+            logging.debug(f'Epoch {epoch} Exit Idx {exit_idx}')
             
             
             if self.should_stop_early(validation_accuracies):
@@ -230,7 +231,8 @@ class ModelTrainer:
         total_loss = 0.0
         total_accuracy = 0.0
         with torch.no_grad():
-            for X_val, y_val in validation_loader:
+            progress_bar = tqdm(validation_loader, desc=f'Validation', dynamic_ncols=True, leave=True)
+            for X_val, y_val in progress_bar:
                 X_val = X_val.to(self.device)
                 y_val = y_val.to(self.device)
                 y_hat_val = self.model(X_val)
@@ -239,6 +241,8 @@ class ModelTrainer:
                 val_accuracy = self.calculate_accuracy(y_hat_val, y_val)
                 total_loss += val_loss.item()
                 total_accuracy += val_accuracy
+                
+                progress_bar.set_postfix({"Val Loss": val_loss.item(), "Val Accuracy": val_accuracy})
         return total_loss / len(validation_loader), total_accuracy / len(validation_loader)
     
     def validate_exit_gates(self, validation_loader):
@@ -252,7 +256,8 @@ class ModelTrainer:
         total_exit_index_taken = 0.0
         
         with torch.no_grad():
-            for (X_val, y_val) in validation_loader:
+            progress_bar = tqdm(validation_loader, desc=f'Validation', dynamic_ncols=True, leave=True)
+            for (X_val, y_val) in progress_bar:
                 starttime = time.time()
                 X_val = X_val.to(self.device)
                 y_val = y_val.to(self.device)
@@ -265,8 +270,7 @@ class ModelTrainer:
                 weights = torch.arange(len(exits_taken_count), device=self.device) + 1
 
                 weighted_avg = (torch.sum(exits_taken_count * weights)).item() / len(X_val)
-                if self.progress_bar is not None:
-                    self.progress_bar.set_postfix({"Accuracy": val_accuracy, "Time": totaltime, 
+                progress_bar.set_postfix({"Accuracy": val_accuracy, "Time": totaltime, 
                                                "Avg Exit Idx": weighted_avg})
                 
                 total_accuracy += val_accuracy
