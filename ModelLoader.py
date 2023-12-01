@@ -4,20 +4,22 @@ import torchvision.models as models
 from EarlyExitModel import EarlyExitModel, TrainingState
 from EarlyStopException import EarlyExitException
 import os
-import shutil
 from model_architectures import VGG_CIFAR10, DenseNet
+from args import model_names
+import logging
 
 class ModelLoader:
     
-    def __init__(self, model_type, device, alpha=None, dataloader=None):        
-        self.validate_model_type(model_type) # ensure correct model type
-        self.model_type = model_type
+    def __init__(self, args, device, alpha=None, dataloader=None):        
+        self.validate_model_type(args.arch) # ensure correct model type
+        self.model_type = args.arch
+        self.dataset = args.data
         self.dataloader = dataloader
         self.alpha = alpha
         self.device = device
         
     def validate_model_type(self, model_type):
-        if model_type not in ["resnet", "vgg_cifar10", "vgg_cifar100", "densenet_cifar100"]:
+        if model_type not in model_names:
             raise Exception("Model type {} not supported.".format(model_type))
         
     def load_model(self, num_outputs, trained_classifiers=False, pretrained=False):
@@ -29,18 +31,20 @@ class ModelLoader:
             assert self.dataloader is not None, "Dataloader must be specified if loading prior model"
         
         should_add_layers = pretrained or trained_classifiers
-        if self.model_type == 'resnet':
+        if self.model_type == 'resnet50':
             model = self.load_resnet(num_outputs, should_add_layers)
-        elif self.model_type == 'vgg_cifar10':
+        elif self.model_type == 'vgg11_bn' and self.dataset == 'cifar10':
             model = self.load_vgg_cifar10(num_outputs, should_add_layers)
-        elif self.model_type == 'vgg_cifar100':
+        elif self.model_type == 'vgg11_bn' and self.dataset == 'cifar100':
             model = self.load_vgg_cifar100(num_outputs, should_add_layers)
-        elif self.model_type == 'densenet_cifar100':
+        elif self.model_type == 'dense121':
             model = self.load_densenet_cifar100(num_outputs, should_add_layers)
+        else:
+            raise Exception("Model type {} not supported.".format(self.model_type))
             
         # load prior model state if needed
         if pretrained or trained_classifiers:
-            print("Setting model weights...")
+            logging.debug("Setting model weights...")
             if pretrained:
                 alpha_no_decimals = str(self.alpha).replace('.', '_')
                 model_name = f"full_model_with_exit_gates_alpha_{alpha_no_decimals}.pth"
@@ -57,7 +61,7 @@ class ModelLoader:
         return model
     
     def add_exits(self, model, exit_layer_attrs, should_add_layers):
-        print("Adding exits...")
+        logging.debug("Adding exits...")
         if should_add_layers:
             X, _ = next(iter(self.dataloader))
         
@@ -81,7 +85,7 @@ class ModelLoader:
             except EarlyExitException: pass
        
     def load_resnet(self, num_outputs, pretrained=False):
-        print(f"Loading EarlyExit ResNet50 model architecture...")
+        logging.info(f"Loading EarlyExit ResNet50 model architecture...")
         resnet = models.resnet50(pretrained=True)
         
         # set requires_grad to False to freeze the parameters
@@ -98,7 +102,7 @@ class ModelLoader:
         return model
     
     def load_vgg_cifar10(self, num_outputs, pretrained=False):
-        print(f"Loading EarlyExit VGG11 model architecture...")
+        logging.info(f"Loading EarlyExit VGG11 model architecture...")
         vggModel = VGG_CIFAR10.vgg11_bn(pretrained=True)
         # set requires_grad to False to freeze the parameters
         for param in vggModel.parameters():
@@ -114,7 +118,7 @@ class ModelLoader:
             
             
     def load_vgg_cifar100(self, num_outputs, pretrained=False):
-        print(f"Loading EarlyExit VGG11 model architecture...")
+        logging.info(f"Loading EarlyExit VGG11 model architecture...")
         vgg = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_vgg11_bn", pretrained=True)
         # set requires_grad to False to freeze the parameters
         for param in vgg.parameters():
@@ -129,7 +133,7 @@ class ModelLoader:
         return model
     
     def load_densenet_cifar100(self, num_outputs, pretrained=False):
-        print(f"Loading EarlyExit DenseNet121 model architecture...")
+        logging.info(f"Loading EarlyExit DenseNet121 model architecture...")
         densenet = DenseNet.densenet121(num_classes=num_outputs, pretrained=True)
         # set requires_grad to False to freeze the parameters
         for param in densenet.parameters():

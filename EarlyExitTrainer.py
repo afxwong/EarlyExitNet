@@ -6,10 +6,11 @@ import os
 from OptionalExitModule import TrainingState
 from EarlyExitGateLoss import EarlyExitGateLoss
 import time
-import pickle
+import logging
 
 class ModelTrainer:
     def __init__(self, model, device, model_dir = os.path.join("models"), alpha=0.5):
+        
         self.model = model
         self.device = device
         self.model_dir = model_dir
@@ -56,16 +57,15 @@ class ModelTrainer:
             # Update and display the progress bar at the end of each epoch
             self.progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
         
-        print(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
-        print(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
+        logging.info(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
+        logging.info(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
             
 
         # Optionally, calculate validation loss
         if validation_loader is not None:
             validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
-            print(f'Epoch {epoch} Validation Loss {validation_loss}')
-            print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
-            print("=====================================")
+            logging.info(f'Epoch {epoch} Validation Loss {validation_loss}')
+            logging.info(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
             
         return net_loss / len(train_loader), net_accuracy / len(train_loader), validation_loss, validation_accuracy
         
@@ -77,7 +77,7 @@ class ModelTrainer:
             validation_accuracies = []
             validation_losses = []
             
-            print("Training classifier for exit", i+1)
+            logging.info(f"Training classifier for exit {i+1}")
                   
             # set exits before you to be forward, with you being exit
             self.model.exit_modules[i].set_state(TrainingState.TRAIN_CLASSIFIER_EXIT)
@@ -99,7 +99,7 @@ class ModelTrainer:
                 self.writer.add_scalar(f'Accuracy/validation/classifier {i}', validation_accuracy, epoch)
             
                 if self.should_stop_early(validation_accuracies):
-                    print("Validation accuracies are decreasing, stopping training early")
+                    logging.debug("Validation accuracies are decreasing, stopping training early")
                     break   
                 
                 if validation_accuracy > max_accuracy:
@@ -107,7 +107,7 @@ class ModelTrainer:
                     self.save_model(f'exit_{i+1}_classifier.pth')
             
         # train the final classifier
-        print("Training final classifier")
+        logging.debug("Training final classifier")
         validation_accuracies = []
         validation_losses = []
         max_accuracy = 0.0
@@ -126,7 +126,7 @@ class ModelTrainer:
             self.writer.add_scalar(f'Accuracy/validation/classifier {len(self.model.exit_modules)}', validation_accuracy, epoch)
             
             if self.should_stop_early(validation_accuracies):
-                print("Validation accuracies are decreasing, stopping training early")
+                logging.debug("Validation accuracies are decreasing, stopping training early")
                 break
             
             if validation_accuracy > max_accuracy:
@@ -201,13 +201,12 @@ class ModelTrainer:
             validation_times.append(validation_time)
             exit_idx_runs.append(exit_idx)
 
-            print(f'Epoch {epoch} Validation Time {validation_time}')
-            print(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
-            print("=====================================")
+            logging.info(f'Epoch {epoch} Validation Time {validation_time}')
+            logging.info(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
             
             
             if self.should_stop_early(validation_accuracies):
-                print("Validation accuracies are decreasing, stopping training early")
+                logging.debug("Validation accuracies are decreasing, stopping training early")
                 break
             
             if validation_accuracy > max_accuracy:
