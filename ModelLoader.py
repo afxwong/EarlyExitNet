@@ -10,12 +10,14 @@ import logging
 
 class ModelLoader:
     
-    def __init__(self, args, device, alpha=None, dataloader=None):        
+    def __init__(self, args, device, dataloader=None):        
         self.validate_model_type(args.arch) # ensure correct model type
         self.model_type = args.arch
         self.dataset = args.data
+        self.model_dir = args.save_path
+        self.alpha = args.alpha
+        
         self.dataloader = dataloader
-        self.alpha = alpha
         self.device = device
         
     def validate_model_type(self, model_type):
@@ -50,7 +52,7 @@ class ModelLoader:
                 model_name = f"full_model_with_exit_gates_alpha_{alpha_no_decimals}.pth"
             else:
                 model_name = f"final_classifier.pth"
-            state_dict_path = os.path.join('models', self.model_type, model_name)   
+            state_dict_path = os.path.join(self.model_dir, model_name)   
             assert os.path.exists(state_dict_path), f"State dict path {state_dict_path} does not exist"
             model.load_state_dict(torch.load(state_dict_path, map_location='cpu'))
             

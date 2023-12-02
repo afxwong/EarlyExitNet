@@ -231,7 +231,7 @@ class ModelTrainer:
         total_loss = 0.0
         total_accuracy = 0.0
         with torch.no_grad():
-            progress_bar = tqdm(validation_loader, desc=f'Validation', dynamic_ncols=True, leave=True)
+            progress_bar = tqdm(validation_loader, desc=f'Validation', dynamic_ncols=True, leave=False)
             for X_val, y_val in progress_bar:
                 X_val = X_val.to(self.device)
                 y_val = y_val.to(self.device)
@@ -256,7 +256,7 @@ class ModelTrainer:
         total_exit_index_taken = 0.0
         
         with torch.no_grad():
-            progress_bar = tqdm(validation_loader, desc=f'Validation', dynamic_ncols=True, leave=True)
+            progress_bar = tqdm(validation_loader, desc=f'Validation', dynamic_ncols=True, leave=False)
             for (X_val, y_val) in progress_bar:
                 starttime = time.time()
                 X_val = X_val.to(self.device)

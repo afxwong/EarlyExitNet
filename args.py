@@ -4,7 +4,6 @@ import os
 import logging
 
 def modify_args(args):
-    args.splits = ['train', 'val']
     args.log_level = logging.getLevelName(args.log_level.upper())
 
     if args.data == 'cifar10':
@@ -13,9 +12,14 @@ def modify_args(args):
         args.num_classes = 100
     elif args.data == 'imagenette':
         args.num_classes = 10
+        
+    if args.arch == 'resnet50':
+        args.lr = 0.00000001
+    else: 
+        args.lr = 0.000001
 
     if not hasattr(args, "save_path") or args.save_path is None:
-        args.save_path = os.path.join("models", args.arch, args.data, datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+        args.save_path = os.path.join("models", args.arch, args.data, )#datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
 
     if args.data.startswith('cifar'):
         args.image_size = (32, 32)
@@ -62,8 +66,8 @@ optim_group.add_argument('--classifier-epochs', default=30, type=int, metavar='N
 
 # inference related
 optim_group = arg_parser.add_argument_group('inference', 'inference setting')
-optim_group.add_argument('--alpha', default=0.5, type=float, metavar='N',
-                        help='alpha value for training gate layers')
+optim_group.add_argument('--alpha', type=float, metavar='N',
+                        help='alpha value for training gate layers, scans range if not provided')
 optim_group.add_argument('--gate-epochs', default=3, type=int, metavar='N',
                          help='manual epoch number (useful on restarts)')
 # optim_group.add_argument('--val_budget', type=float,
