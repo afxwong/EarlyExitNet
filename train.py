@@ -10,7 +10,8 @@ import os
 class Runner:
     
     def __init__(self, args):
-        logging.basicConfig(level = args.log_level, format = '%(asctime)s - %(levelname)s - %(message)s')
+        logging.basicConfig(level = args.log_level, format = '%(asctime)s - %(levelname)s - %(message)s',
+                            handlers=[logging.StreamHandler(), logging.FileHandler("log.txt")])
         self.args = modify_args(args)
         self.trainer = None
         self.find_torch_device()

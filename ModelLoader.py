@@ -35,6 +35,8 @@ class ModelLoader:
             model = self.load_vgg11(num_outputs, should_add_layers)
         elif self.model_type == 'densenet121':
             model = self.load_densenet_cifar100(num_outputs, should_add_layers)
+        elif self.model_type == 'resnet56':
+            model = self.load_resnet56(num_outputs, should_add_layers)
         else:
             raise Exception("Model type {} not supported.".format(self.model_type))
             
@@ -54,6 +56,8 @@ class ModelLoader:
         model.set_state(TrainingState.INFER)
             
         model.to(self.device)
+        logging.debug(f"Model: \n{model}")
+        
         return model
     
     def add_exits(self, model, exit_layer_attrs, should_add_layers):
@@ -95,6 +99,22 @@ class ModelLoader:
         
         self.add_exits(model, ['layer1', 'layer2', 'layer3'], pretrained)
         
+        return model
+    
+    def load_resnet56(self, num_outputs, pretrained=False):
+        logging.info(f"Loading EarlyExit ResNet56 model architecture...")
+        resnet = ResNet.ResNet56(num_classes=num_outputs, pretrained=self.use_pretrained_arch, dataset=self.dataset)
+        
+        if not self.use_pretrained_arch:
+            # set requires_grad to False to freeze the parameters
+            for param in resnet.parameters():
+                param.requires_grad = False
+                
+        model = EarlyExitModel(resnet, num_outputs, self.device)
+        model.clear_exits()
+        model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
+        
+        self.add_exits(model, ['layer1', 'layer2', 'layer3'], pretrained)
         return model
     
     def load_vgg11(self, num_outputs, pretrained=False):

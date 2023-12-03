@@ -29,9 +29,7 @@ class ModelTrainer:
         
     # MARK: - Training Classifiers
     def train_full_model(self, train_loader, epoch_count=150, validation_loader=None):
-        logging.info("Performing transfer learning on the original model")
-        self.model.train()
-        self.model.set_state(TrainingState.TRAIN_ARCH)
+        logging.info("Training base model from scratch")
         
         # temporarily remove all exit_modules (ok since they haen't been trained yet)
         module_attrs = self.model.original_modules.keys()
@@ -44,19 +42,19 @@ class ModelTrainer:
         # train the model
         max_accuracy = 0.0
         val_accuracies = []
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.0001)
+        optimizer = torch.optim.SGD(self.model.parameters(), lr=self.args.arch_lr, momentum=0.9, weight_decay=1e-4, nesterov=False)
+        lr_steps = [(i+1) * 50 for i in range(0, epoch_count // 50)]
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_steps, gamma=0.1)
         
-        for epoch in range(epoch_count):        
+        for epoch in range(epoch_count):     
+            self.model.train()
+            self.model.set_state(TrainingState.TRAIN_ARCH)   
             self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch+1}', dynamic_ncols=True, leave=True)
             
             net_loss = 0.0
             net_accuracy = 0.0
 
             for i, (X, y) in enumerate(self.progress_bar):
-                if self.should_stop_early(val_accuracies):
-                    logging.debug("Validation accuracies are decreasing, stopping training early")
-                    break   
-                
                 
                 X = X.to(self.device)
                 y = y.to(self.device)
@@ -75,6 +73,9 @@ class ModelTrainer:
                 
                 # Update and display the progress bar at the end of each epoch
                 self.progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
+            
+            # step LR scheduler if needed
+            scheduler.step()
             
             logging.debug(f'Epoch {epoch+1} Loss {net_loss / len(train_loader)}')
             logging.debug(f'Epoch {epoch+1} Accuracy {net_accuracy / len(train_loader)}')
@@ -96,6 +97,11 @@ class ModelTrainer:
             self.writer.add_scalar(f'Accuracy/train/full model', net_accuracy / len(train_loader), epoch)
             self.writer.add_scalar(f'Loss/validation/full model', validation_loss, epoch)
             self.writer.add_scalar(f'Accuracy/validation/full model', validation_accuracy, epoch)
+            
+            if epoch > 50 and self.should_stop_early(val_accuracies, num_acc_to_check=10):
+                logging.debug("Validation accuracies are decreasing, stopping training early")
+                break   
+                
             
         self.writer.flush()
         
@@ -364,7 +370,7 @@ class ModelTrainer:
         self.gate_loss_function = EarlyExitGateLoss(self.device, alpha)
         
     
-    def should_stop_early(self, validation_accuracy_list):
+    def should_stop_early(self, validation_accuracy_list, num_acc_to_check=5):
         if len(validation_accuracy_list) < 5:
             return False
         
@@ -373,7 +379,7 @@ class ModelTrainer:
             return True
         
         # return true if the last validation accuracies are decreasing
-        if validation_accuracy_list[-1] < validation_accuracy_list[-2] < validation_accuracy_list[-3]: 
+        if all(validation_accuracy_list[-1] < validation_accuracy_list[-i-1] for i in range(1, num_acc_to_check)):
             return True
         return False
     

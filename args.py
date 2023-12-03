@@ -28,7 +28,7 @@ def modify_args(args):
     return args
 
 
-model_names = ['vgg11_bn', 'resnet50', 'densenet121']
+model_names = ['vgg11_bn', 'resnet50', 'resnet56', 'densenet121']
 dataset_names = ['cifar10', 'cifar100', 'imagenette']
 
 arg_parser = argparse.ArgumentParser(
@@ -67,6 +67,8 @@ optim_group.add_argument('-b', '--batch-size', default=32, type=int, help='batch
 optim_group.add_argument('-tb', '--test-batch-size', default=32, type=int, help='batch size for test dataloader')
 optim_group.add_argument('--arch-epochs', default=150, type=int, metavar='N',
                          help='manual epoch number (useful on restarts)')
+optim_group.add_argument('--arch-lr', default=0.1, type=float, metavar='N',
+                         help='learning rate for training base model')
 optim_group.add_argument('--classifier-epochs', default=30, type=int, metavar='N',
                          help='manual epoch number (useful on restarts)')
 

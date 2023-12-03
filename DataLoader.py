@@ -29,14 +29,14 @@ class CustomDataLoader:
         self.image_size = args.image_size
         
     def get_dataset(self, dataset_name, batch_size=None, test_batch_size=None):
+        transform = transforms.Compose([
+            transforms.Resize(self.image_size),
+            transforms.ToTensor()])
+        
         if dataset_name == "imagenette":
             # use the imagenette dataset
             hf_dataset = load_dataset("frgfm/imagenette", '320px')
             hf_dataset = concatenate_datasets(hf_dataset.values())
-            transform = transforms.Compose([
-                transforms.Resize(self.image_size),
-                transforms.ToTensor(),
-            ])
 
         elif dataset_name == "cifar10":
             # use the cifar10 dataset
@@ -44,8 +44,7 @@ class CustomDataLoader:
             hf_dataset = concatenate_datasets(hf_dataset.values())
             
             transform = transforms.Compose([
-                transforms.Resize(self.image_size),
-                transforms.ToTensor(),
+                *transform.transforms,
                 transforms.Normalize(mean=[0.507, 0.4865, 0.4409],
                                     std=[0.2673, 0.2564, 0.2761])
             ])
@@ -53,13 +52,12 @@ class CustomDataLoader:
             # use the cifar100 dataset
             hf_dataset = load_dataset("cifar100")
             hf_dataset = concatenate_datasets(hf_dataset.values())
-            
-            transform = transforms.Compose([
-                transforms.Resize(self.image_size),
-                transforms.ToTensor(),
-            ])
         else:
             raise ValueError("Dataset not supported")
+            
+        transform = transforms.Compose([
+            *transform.transforms,
+            transforms.RandomHorizontalFlip()])
             
         dataset = CustomDataset(hf_dataset, transform=transform)
         test_size = 0.2
