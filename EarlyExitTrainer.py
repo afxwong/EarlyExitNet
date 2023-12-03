@@ -29,6 +29,7 @@ class ModelTrainer:
         
     # MARK: - Training Classifiers
     def train_full_model(self, train_loader, epoch_count=150, validation_loader=None):
+        logging.info("Performing transfer learning on the original model")
         self.model.train()
         self.model.set_state(TrainingState.TRAIN_ARCH)
         
@@ -46,7 +47,7 @@ class ModelTrainer:
         optimizer = torch.optim.Adam(self.model.parameters(), lr=0.0001)
         
         for epoch in range(epoch_count):        
-            self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', dynamic_ncols=True, leave=True)
+            self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch+1}', dynamic_ncols=True, leave=True)
             
             net_loss = 0.0
             net_accuracy = 0.0
@@ -75,15 +76,15 @@ class ModelTrainer:
                 # Update and display the progress bar at the end of each epoch
                 self.progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
             
-            logging.debug(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
-            logging.debug(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
+            logging.debug(f'Epoch {epoch+1} Loss {net_loss / len(train_loader)}')
+            logging.debug(f'Epoch {epoch+1} Accuracy {net_accuracy / len(train_loader)}')
                 
 
             # Optionally, calculate validation loss
             if validation_loader is not None:
                 validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
-                logging.debug(f'Epoch {epoch} Validation Loss {validation_loss}')
-                logging.debug(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+                logging.debug(f'Epoch {epoch+1} Validation Loss {validation_loss}')
+                logging.debug(f'Epoch {epoch+1} Validation Accuracy {validation_accuracy}')
                 
                 val_accuracies.append(validation_accuracy)
                 if max_accuracy < validation_accuracy:
@@ -111,7 +112,7 @@ class ModelTrainer:
         validation_loss = 0.0
         validation_accuracy = 0.0
         
-        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', dynamic_ncols=True, leave=True)
+        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch+1}', dynamic_ncols=True, leave=True)
         
         for i, (X, y) in enumerate(self.progress_bar):
             X = X.to(self.device)
@@ -135,15 +136,15 @@ class ModelTrainer:
             # Update and display the progress bar at the end of each epoch
             self.progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
         
-        logging.debug(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
-        logging.debug(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
+        logging.debug(f'Epoch {epoch+1} Loss {net_loss / len(train_loader)}')
+        logging.debug(f'Epoch {epoch+1} Accuracy {net_accuracy / len(train_loader)}')
             
 
         # Optionally, calculate validation loss
         if validation_loader is not None:
             validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
-            logging.debug(f'Epoch {epoch} Validation Loss {validation_loss}')
-            logging.debug(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+            logging.debug(f'Epoch {epoch+1} Validation Loss {validation_loss}')
+            logging.debug(f'Epoch {epoch+1} Validation Accuracy {validation_accuracy}')
             
         return net_loss / len(train_loader), net_accuracy / len(train_loader), validation_loss, validation_accuracy
         
@@ -220,7 +221,7 @@ class ModelTrainer:
         validation_accuracy = 0.0
         validation_time = 0.0
         
-        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', ncols=100, dynamic_ncols=False, leave=True)
+        self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch+1}', ncols=100, dynamic_ncols=False, leave=True)
         
         # concatenate trainable parameters as all gate layers
         trainable_params = []
@@ -279,9 +280,9 @@ class ModelTrainer:
             validation_times.append(validation_time)
             exit_idx_runs.append(exit_idx)
 
-            logging.debug(f'Epoch {epoch} Validation Time {validation_time}')
-            logging.debug(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
-            logging.debug(f'Epoch {epoch} Exit Idx {exit_idx}')
+            logging.debug(f'Epoch {epoch+1} Validation Time {validation_time}')
+            logging.debug(f'Epoch {epoch+1} Validation Accuracy {validation_accuracy}')
+            logging.debug(f'Epoch {epoch+1} Exit Idx {exit_idx}')
             
             
             if self.should_stop_early(validation_accuracies):

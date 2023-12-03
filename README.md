@@ -9,4 +9,22 @@ Any python version above 3.8 will suffice for this project. If this is a CUDA-en
 All appropriate model architectures are either hardcoded in this repository, or are downloaded via public channels. Pretrained transfer learning models can be found [here](https://drive.google.com/drive/folders/1fzTctAh_UhlHtxb_INw86GjkU3ls1_LR?usp=sharing). Any model not in this list is already trained on the proper dataset and does not require an initial .pth file.
 
 #### Train a multi-exit model:
-This is currently a multi-step process. Please begin by training the classifiers via main.ipynb, then train the appropriate alpha configurations as desired via alpha_tuning.ipynb.
+```
+python train.py --arch <model_architecture> --data <dataset_name> --alpha <alpha_value>
+```
+
+For example, training a DenseNet121 model on CIFAR-10 with an alpha value of 0.5 would be:
+```
+python train.py --arch densenet121 --data cifar10 --alpha 0.5
+```
+
+For example, training a ResNet50 model on CIFAR-100 with an alpha value of 0.5 would be:
+```
+python train.py --arch resnet50 --data cifar100 --alpha 0.5
+```
+
+For example, training a VGG11 model on ImageNetTE with an alpha value of 0.5 would be:
+```
+python train.py --arch vgg11 --data imagenette --alpha 0.5
+```
+Please see [args.py](args.py) for a full list of arguments which can be passed in to control the training porcess.
