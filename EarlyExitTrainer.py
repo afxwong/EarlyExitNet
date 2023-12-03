@@ -9,23 +9,100 @@ import time
 import logging
 
 class ModelTrainer:
-    def __init__(self, model, device, model_dir = os.path.join("models"), alpha=0.5):
+    def __init__(self, model, device, args):
         
         self.model = model
         self.device = device
-        self.model_dir = model_dir
+        self.args = args
+        self.set_model_dir(args.save_path)
         
         self.classifier_loss_function = nn.CrossEntropyLoss()
         self.gate_loss_function = None # gets set by set_alpha call
-        self.alpha = None # gets set by set_alpha call
-        
-        self.writer = SummaryWriter(log_dir=os.path.join(self.model_dir, "runs"))
         self.progress_bar = None
         
         # create the gate loss function
-        self.set_alpha(alpha)
+        self.set_alpha(args.alpha)
+        
+    def set_model_dir(self, model_dir):
+        self.model_dir = model_dir
+        self.writer = SummaryWriter(log_dir=os.path.join(self.model_dir, "runs"))
         
     # MARK: - Training Classifiers
+    def train_full_model(self, train_loader, epoch_count=150, validation_loader=None):
+        self.model.train()
+        self.model.set_state(TrainingState.TRAIN_ARCH)
+        
+        # temporarily remove all exit_modules (ok since they haen't been trained yet)
+        module_attrs = self.model.original_modules.keys()
+        self.model.clear_exits()
+        
+        # make every parameter trainable
+        for param in self.model.parameters():
+            param.requires_grad = True
+        
+        # train the model
+        max_accuracy = 0.0
+        val_accuracies = []
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.0001)
+        
+        for epoch in range(epoch_count):        
+            self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', dynamic_ncols=True, leave=True)
+            
+            net_loss = 0.0
+            net_accuracy = 0.0
+
+            for i, (X, y) in enumerate(self.progress_bar):
+                if self.should_stop_early(val_accuracies):
+                    logging.debug("Validation accuracies are decreasing, stopping training early")
+                    break   
+                
+                
+                X = X.to(self.device)
+                y = y.to(self.device)
+                y_hat = self.model(X)
+                
+                optimizer.zero_grad()
+                
+                loss = self.classifier_loss_function(y_hat, y)
+                accuracy = self.calculate_accuracy(y_hat, y)
+                
+                net_loss += loss.item()
+                net_accuracy += accuracy
+
+                loss.backward()
+                optimizer.step()
+                
+                # Update and display the progress bar at the end of each epoch
+                self.progress_bar.set_postfix({"Loss": loss.item(), "Accuracy": accuracy})
+            
+            logging.debug(f'Epoch {epoch} Loss {net_loss / len(train_loader)}')
+            logging.debug(f'Epoch {epoch} Accuracy {net_accuracy / len(train_loader)}')
+                
+
+            # Optionally, calculate validation loss
+            if validation_loader is not None:
+                validation_loss, validation_accuracy = self.validate_classifier(validation_loader)
+                logging.debug(f'Epoch {epoch} Validation Loss {validation_loss}')
+                logging.debug(f'Epoch {epoch} Validation Accuracy {validation_accuracy}')
+                
+                val_accuracies.append(validation_accuracy)
+                if max_accuracy < validation_accuracy:
+                    max_accuracy = validation_accuracy
+                    self.save_model(f'{self.args.arch}_{self.args.data}.pth')
+                    
+            # write to tensorboard
+            self.writer.add_scalar(f'Loss/train/full model', net_loss / len(train_loader), epoch)
+            self.writer.add_scalar(f'Accuracy/train/full model', net_accuracy / len(train_loader), epoch)
+            self.writer.add_scalar(f'Loss/validation/full model', validation_loss, epoch)
+            self.writer.add_scalar(f'Accuracy/validation/full model', validation_accuracy, epoch)
+            
+        self.writer.flush()
+        
+        # put the exit modules back
+        for attr in module_attrs:
+            self.model.add_exit(attr) 
+        
+    
     def train_classifier_epoch(self, train_loader, epoch, validation_loader=None):
         self.model.train()
         net_loss = 0.0
@@ -36,12 +113,13 @@ class ModelTrainer:
         
         self.progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}', dynamic_ncols=True, leave=True)
         
-        trainable_params = filter(lambda p: p.requires_grad, self.model.parameters())
-        optimizer = torch.optim.Adam(trainable_params, lr=0.0001)
         for i, (X, y) in enumerate(self.progress_bar):
             X = X.to(self.device)
             y = y.to(self.device)
             y_hat = self.model(X)
+        
+            trainable_params = filter(lambda p: p.requires_grad, self.model.parameters())    
+            optimizer = torch.optim.Adam(trainable_params, lr=0.0001)
             
             optimizer.zero_grad()
             

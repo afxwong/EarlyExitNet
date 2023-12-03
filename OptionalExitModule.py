@@ -10,6 +10,7 @@ class TrainingState(Enum):
     TRAIN_CLASSIFIER_EXIT = 2
     TRAIN_EXIT = 3
     INFER = 4
+    TRAIN_ARCH = 5
 
 class OptionalExitModule(nn.Module):
 
@@ -94,6 +95,6 @@ class OptionalExitModule(nn.Module):
             return self.forward_train_classifier_forward(X)
         elif self.state == TrainingState.TRAIN_EXIT:
             return self.forward_train_exit(X, X_flat)
-        if self.state == TrainingState.INFER:
+        if self.state == TrainingState.INFER or self.state == TrainingState.TRAIN_ARCH:
             return self.forward_infer(X, X_flat)
         

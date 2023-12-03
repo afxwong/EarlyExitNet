@@ -29,6 +29,7 @@ def modify_args(args):
 
 
 model_names = ['vgg11_bn', 'resnet50', 'densenet121']
+dataset_names = ['cifar10', 'cifar100', 'imagenette']
 
 arg_parser = argparse.ArgumentParser(
     description='Image classification PK main script')
@@ -37,14 +38,14 @@ exp_group = arg_parser.add_argument_group('exp', 'experiment setting')
 exp_group.add_argument('--save-path', default=None,
                        type=str, metavar='SAVE',
                        help='path to the experiment logging directory')
-exp_group.add_argument('--use_gpu', default=True, type=bool, 
-                       choices=logging._nameToLevel.keys() , help='Use CPU if False')
+exp_group.add_argument('--use-cpu', default=False, 
+                       action='store_true', help='Use CPU if desired')
 exp_group.add_argument('--log-level', default="INFO", type=str, help='Logging level')
 
 # dataset related
 data_group = arg_parser.add_argument_group('data', 'dataset setting')
 data_group.add_argument('--data', metavar='D', default='imagenette',
-                        choices=['cifar10', 'cifar100', 'imagenette'],
+                        choices=dataset_names,
                         help='data to work on')
 data_group.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
@@ -56,11 +57,16 @@ arch_group.add_argument('--arch', '-a', metavar='ARCH', default='resnet50',
                         help='model architecture: ' +
                              ' | '.join(model_names) +
                              ' (default: resnet50)')
+arch_group.add_argument('--use-pretrained-arch', dest='use_pretrained_arch', 
+                        action='store_true', 
+                        default=False, help='Whether to load in a state dict for the base model (default: False)')
 
 # training related
 optim_group = arg_parser.add_argument_group('optimization', 'optimization setting')
 optim_group.add_argument('-b', '--batch-size', default=32, type=int, help='batch size for train dataloader')
 optim_group.add_argument('-tb', '--test-batch-size', default=32, type=int, help='batch size for test dataloader')
+optim_group.add_argument('--arch-epochs', default=150, type=int, metavar='N',
+                         help='manual epoch number (useful on restarts)')
 optim_group.add_argument('--classifier-epochs', default=30, type=int, metavar='N',
                          help='manual epoch number (useful on restarts)')
 

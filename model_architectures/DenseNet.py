@@ -97,12 +97,12 @@ class DenseNet(nn.Module):
         
         return out
     
-def densenet121(num_classes, pretrained=False):
+def densenet121(num_classes, pretrained=False, dataset="cifar100"):
     model = DenseNet(Bottleneck, [6, 12, 24, 16], growth_rate=12, num_classes=num_classes)
     if pretrained:
         script_dir = os.path.dirname(__file__)
         state_dict = torch.load(
-            os.path.join(script_dir, "state_dicts", "densenet121_cifar100.pth"), map_location="cpu"
+            os.path.join(script_dir, "state_dicts", f"densenet121_{dataset}.pth"), map_location="cpu"
         )
         model.load_state_dict(state_dict)
     return model

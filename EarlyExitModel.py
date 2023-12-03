@@ -112,9 +112,8 @@ class EarlyExitModel(nn.Module):
             
             # if exit occured before last classifier, get y_hat where exit occured
             return early_exit_y_hat
-        
-        
-        if self.state == TrainingState.TRAIN_EXIT:
+
+        elif self.state == TrainingState.TRAIN_EXIT:
             assert terminal_layer_y_hat is not None, "Forward propagation should have made it to the end of the model"
             
             y_hats = torch.empty((batch_size, len(self.exit_modules) + 1, self.num_outputs), device=self.device)
@@ -128,8 +127,7 @@ class EarlyExitModel(nn.Module):
             
             return y_hats, exit_confidences
         
-        
-        if self.state == TrainingState.INFER:
+        else:
             if torch.cuda.is_available() and len(self.exit_modules) > 0:
                 for stream in [module.stream for module in self.exit_modules if module.stream is not None]:
                     stream.synchronize() # wait for all multithreaded classifiers to finish

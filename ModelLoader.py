@@ -4,26 +4,22 @@ import torchvision.models as models
 from EarlyExitModel import EarlyExitModel, TrainingState
 from EarlyStopException import EarlyExitException
 import os
-from model_architectures import VGG_CIFAR10, DenseNet
-from args import model_names
+from model_architectures import VGG, DenseNet, ResNet
+from args import model_names, dataset_names
 import logging
 
 class ModelLoader:
     
     def __init__(self, args, device, dataloader=None):        
-        self.validate_model_type(args.arch) # ensure correct model type
         self.model_type = args.arch
         self.dataset = args.data
         self.model_dir = args.save_path
         self.alpha = args.alpha
+        self.use_pretrained_arch = args.use_pretrained_arch
         
         self.dataloader = dataloader
         self.device = device
-        
-    def validate_model_type(self, model_type):
-        if model_type not in model_names:
-            raise Exception("Model type {} not supported.".format(model_type))
-        
+ 
     def load_model(self, num_outputs, trained_classifiers=False, pretrained=False):
         assert not (trained_classifiers and pretrained), "Cannot have both trained and untrained gate layers"
         
@@ -34,12 +30,10 @@ class ModelLoader:
         
         should_add_layers = pretrained or trained_classifiers
         if self.model_type == 'resnet50':
-            model = self.load_resnet(num_outputs, should_add_layers)
-        elif self.model_type == 'vgg11_bn' and self.dataset == 'cifar10':
-            model = self.load_vgg_cifar10(num_outputs, should_add_layers)
-        elif self.model_type == 'vgg11_bn' and self.dataset == 'cifar100':
-            model = self.load_vgg_cifar100(num_outputs, should_add_layers)
-        elif self.model_type == 'densenet121' and self.dataset == 'cifar100':
+            model = self.load_resnet50(num_outputs, should_add_layers)
+        elif self.model_type == 'vgg11_bn':
+            model = self.load_vgg11(num_outputs, should_add_layers)
+        elif self.model_type == 'densenet121':
             model = self.load_densenet_cifar100(num_outputs, should_add_layers)
         else:
             raise Exception("Model type {} not supported.".format(self.model_type))
@@ -86,15 +80,15 @@ class ModelLoader:
                 model.model(X)
             except EarlyExitException: pass
        
-    def load_resnet(self, num_outputs, pretrained=False):
+    def load_resnet50(self, num_outputs, pretrained=False):
         logging.info(f"Loading EarlyExit ResNet50 model architecture...")
-        resnet = models.resnet50(pretrained=True)
+        resnet = ResNet.ResNet50(num_classes=num_outputs, pretrained=self.use_pretrained_arch, dataset=self.dataset)
         
-        # set requires_grad to False to freeze the parameters
-        for param in resnet.parameters():
-            param.requires_grad = False
-        
-        resnet.fc = nn.Linear(resnet.fc.in_features, num_outputs)
+        if not self.use_pretrained_arch:
+            # set requires_grad to False to freeze the parameters
+            for param in resnet.parameters():
+                param.requires_grad = False
+                
         model = EarlyExitModel(resnet, num_outputs, self.device)
         model.clear_exits()
         model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
@@ -103,44 +97,27 @@ class ModelLoader:
         
         return model
     
-    def load_vgg_cifar10(self, num_outputs, pretrained=False):
+    def load_vgg11(self, num_outputs, pretrained=False):
         logging.info(f"Loading EarlyExit VGG11 model architecture...")
-        vggModel = VGG_CIFAR10.vgg11_bn(pretrained=True)
-        # set requires_grad to False to freeze the parameters
-        for param in vggModel.parameters():
-            param.requires_grad = False
-        vggModel.classifier[-1] = nn.Linear(vggModel.classifier[-1].in_features, num_outputs)
-        
+        vggModel = VGG.vgg11_bn(pretrained=self.use_pretrained_arch, dataset=self.dataset)
+        if not self.use_pretrained_arch:
+            # set requires_grad to False to freeze the parameters
+            for param in vggModel.parameters():
+                param.requires_grad = False
         model = EarlyExitModel(vggModel, num_outputs, self.device)
         model.clear_exits()
         model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
         self.add_exits(model, ['features.8', 'features.15', 'features.22', 'avgpool'], pretrained)
         
         return model
-            
-            
-    def load_vgg_cifar100(self, num_outputs, pretrained=False):
-        logging.info(f"Loading EarlyExit VGG11 model architecture...")
-        vgg = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_vgg11_bn", pretrained=True)
-        # set requires_grad to False to freeze the parameters
-        for param in vgg.parameters():
-            param.requires_grad = False
-        vgg.classifier[-1] = nn.Linear(vgg.classifier[-1].in_features, num_outputs)
-        model = EarlyExitModel(vgg, num_outputs, self.device)
-        model.clear_exits()
-        
-        model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
-        self.add_exits(model, ['features.8', 'features.15', 'features.22', "classifier.0"], pretrained)
-        
-        return model
     
     def load_densenet_cifar100(self, num_outputs, pretrained=False):
         logging.info(f"Loading EarlyExit DenseNet121 model architecture...")
-        densenet = DenseNet.densenet121(num_classes=num_outputs, pretrained=True)
-        # set requires_grad to False to freeze the parameters
-        for param in densenet.parameters():
-            param.requires_grad = False
-        densenet.linear = nn.Linear(densenet.linear.in_features, num_outputs)
+        densenet = DenseNet.densenet121(num_classes=num_outputs, pretrained=self.args.use_pretrained_arch, dataset=self.args.data)
+        if not self.args.use_pretrained_arch:
+            # set requires_grad to False to freeze the parameters
+            for param in densenet.parameters():
+                param.requires_grad = False
         model = EarlyExitModel(densenet, num_outputs, self.device)
         model.clear_exits()
         
