@@ -354,7 +354,7 @@ class ModelTrainer:
             return True
         
         # return true if the last validation accuracies are decreasing
-        if all(validation_accuracy_list[i] > validation_accuracy_list[i+1] for i in range(-num_acc_to_check, -1)):
+        if all(validation_accuracy_list[i] > validation_accuracy_list[i+1] for i in range(-num_acc_to_check, 0)):
             return True
         return False
     

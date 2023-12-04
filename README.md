@@ -18,9 +18,9 @@ For example, training a DenseNet121 model on CIFAR-10 with an alpha value of 0.5
 python train.py --arch densenet121 --data cifar10 --alpha 0.5
 ```
 
-For example, training a ResNet50 model on CIFAR-100 with an alpha value of 0.5 would be:
+For example, training a ResNet50 model on CIFAR-100 with an alpha value of 0.5, with a pretrained base version of ResNet50 would be:
 ```
-python train.py --arch resnet50 --data cifar100 --alpha 0.5
+python train.py --arch resnet50 --data cifar100 --alpha 0.5 --use-pretrained-arch
 ```
 
 For example, training a VGG11 model on ImageNetTE with an alpha value of 0.5 would be:
