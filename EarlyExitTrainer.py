@@ -43,7 +43,7 @@ class ModelTrainer:
         max_accuracy = 0.0
         val_accuracies = []
         optimizer = torch.optim.SGD(self.model.parameters(), lr=self.args.arch_lr, momentum=0.9, weight_decay=1e-4, nesterov=False)
-        lr_steps = [(i+1) * 50 for i in range(0, epoch_count // 50)]
+        lr_steps = [0.66 * epoch_count, 0.9 * epoch_count]
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_steps, gamma=0.1)
         
         for epoch in range(epoch_count):     
@@ -90,17 +90,17 @@ class ModelTrainer:
                 val_accuracies.append(validation_accuracy)
                 if max_accuracy < validation_accuracy:
                     max_accuracy = validation_accuracy
-                    self.save_model(f'{self.args.arch}_{self.args.data}.pth')
+                    self.save_internal_model(f'{self.args.arch}_{self.args.data}.pth')
                     
             # write to tensorboard
-            self.writer.add_scalar(f'Loss/train/full model', net_loss / len(train_loader), epoch)
-            self.writer.add_scalar(f'Accuracy/train/full model', net_accuracy / len(train_loader), epoch)
-            self.writer.add_scalar(f'Loss/validation/full model', validation_loss, epoch)
-            self.writer.add_scalar(f'Accuracy/validation/full model', validation_accuracy, epoch)
+            self.writer.add_scalar(f'Loss/train/full model', net_loss / len(train_loader), epoch+1)
+            self.writer.add_scalar(f'Accuracy/train/full model', net_accuracy / len(train_loader), epoch+1)
+            self.writer.add_scalar(f'Loss/validation/full model', validation_loss, epoch+1)
+            self.writer.add_scalar(f'Accuracy/validation/full model', validation_accuracy, epoch+1)
             
             if epoch > 50 and self.should_stop_early(val_accuracies, num_acc_to_check=10):
-                logging.debug("Validation accuracies are decreasing, stopping training early")
-                break   
+                logging.debug(f"Validation accuracies at epoch {epoch+1} are decreasing, stopping training early")
+                # break   
                 
             
         self.writer.flush()
@@ -178,10 +178,10 @@ class ModelTrainer:
                 validation_accuracies.append(validation_accuracy)
                 
                 # write to tensorboard
-                self.writer.add_scalar(f'Loss/train/classifier {i}', loss, epoch)
-                self.writer.add_scalar(f'Accuracy/train/classifier {i}', accuracy, epoch)
-                self.writer.add_scalar(f'Loss/validation/classifier {i}', validation_loss, epoch)
-                self.writer.add_scalar(f'Accuracy/validation/classifier {i}', validation_accuracy, epoch)
+                self.writer.add_scalar(f'Loss/train/classifier {i}', loss, epoch+1)
+                self.writer.add_scalar(f'Accuracy/train/classifier {i}', accuracy, epoch+1)
+                self.writer.add_scalar(f'Loss/validation/classifier {i}', validation_loss, epoch+1)
+                self.writer.add_scalar(f'Accuracy/validation/classifier {i}', validation_accuracy, epoch+1)
             
                 if self.should_stop_early(validation_accuracies):
                     logging.debug("Validation accuracies are decreasing, stopping training early")
@@ -190,33 +190,8 @@ class ModelTrainer:
                 if validation_accuracy > max_accuracy:
                     max_accuracy = validation_accuracy
                     self.save_model(f'exit_{i+1}_classifier.pth')
-            
-        # train the final classifier
-        logging.debug("Training final classifier")
-        validation_accuracies = []
-        validation_losses = []
-        max_accuracy = 0.0
-        for i in range(len(self.model.exit_modules)):
-            self.model.exit_modules[i].set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
-            
-        for epoch in range(epoch_count):
-            loss, accuracy, validation_loss, validation_accuracy = self.train_classifier_epoch(train_loader, epoch, validation_loader)
-            validation_losses.append(validation_loss)
-            validation_accuracies.append(validation_accuracy)
-            
-            # write to tensorboard
-            self.writer.add_scalar(f'Loss/train/classifier {len(self.model.exit_modules)}', loss, epoch)
-            self.writer.add_scalar(f'Accuracy/train/classifier {len(self.model.exit_modules)}', accuracy, epoch)
-            self.writer.add_scalar(f'Loss/validation/classifier {len(self.model.exit_modules)}', validation_loss, epoch)
-            self.writer.add_scalar(f'Accuracy/validation/classifier {len(self.model.exit_modules)}', validation_accuracy, epoch)
-            
-            if self.should_stop_early(validation_accuracies):
-                logging.debug("Validation accuracies are decreasing, stopping training early")
-                break
-            
-            if validation_accuracy > max_accuracy:
-                max_accuracy = validation_accuracy    
-                self.save_model(f'final_classifier.pth')
+              
+        self.save_model(f'final_classifier.pth')
         self.writer.flush()
            
     # MARK: - Training Exits
@@ -371,7 +346,7 @@ class ModelTrainer:
         
     
     def should_stop_early(self, validation_accuracy_list, num_acc_to_check=5):
-        if len(validation_accuracy_list) < 5:
+        if len(validation_accuracy_list) < num_acc_to_check:
             return False
         
         # return true if we are above 99% accuracy
@@ -379,11 +354,21 @@ class ModelTrainer:
             return True
         
         # return true if the last validation accuracies are decreasing
-        if all(validation_accuracy_list[-1] < validation_accuracy_list[-i-1] for i in range(1, num_acc_to_check)):
+        if all(validation_accuracy_list[i] > validation_accuracy_list[i+1] for i in range(-num_acc_to_check, -1)):
             return True
         return False
     
+    # MARK: - Saving
     def save_model(self, model_name):
+        # save the full model
+        assert self.model.state != TrainingState.TRAIN_ARCH, "You must use save_internal_model to save the internal model"
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
         torch.save(self.model.state_dict(), os.path.join(self.model_dir, model_name))
+        
+    def save_internal_model(self, model_name):
+        # save only the base model
+        assert self.model.state == TrainingState.TRAIN_ARCH, "Model must be in TRAIN_ARCH state to save internal model"
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
+        torch.save(self.model.model, os.path.join(self.model_dir, model_name))

@@ -10,11 +10,36 @@ import os
 class Runner:
     
     def __init__(self, args):
-        logging.basicConfig(level = args.log_level, format = '%(asctime)s - %(levelname)s - %(message)s',
-                            handlers=[logging.StreamHandler(), logging.FileHandler("log.txt")])
         self.args = modify_args(args)
         self.trainer = None
+        
+        self.setup_logging()
         self.find_torch_device()
+        
+    def setup_logging(self):
+        os.system("rm log.txt")
+        # Create a logger
+        self.logger = logging.getLogger('my_logger')
+
+        # Create a FileHandler for logging to a file (warnings and higher)
+        fileHandler = logging.FileHandler("log.txt")
+        fileHandler.setLevel(logging.DEBUG)
+
+        # Create a StreamHandler for logging to the console (debug and higher)
+        consoleHandler = logging.StreamHandler()
+        consoleHandler.setLevel(self.args.log_level)
+
+        # Create a formatter (customize as needed)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+        # Set the formatter for the handlers
+        fileHandler.setFormatter(formatter)
+        consoleHandler.setFormatter(formatter)
+
+        # Add the handlers to the logger
+        logging.getLogger().addHandler(fileHandler)
+        logging.getLogger().addHandler(consoleHandler)
+        logging.getLogger().setLevel(logging.DEBUG)
         
     def find_torch_device(self):
         logging.debug(f"PyTorch version: {torch.__version__}")

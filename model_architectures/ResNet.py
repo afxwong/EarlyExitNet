@@ -128,7 +128,8 @@ class ResNet(nn.Module):
 # Loading pretrained weights
 
 def _load_state_dict(model, arch, dataset):
-    dir = os.path.join("state_dicts", f"{arch}_{dataset}.pth")
+    script_dir = os.path.dirname(__file__)
+    dir = os.path.join(script_dir, "state_dicts", f"{arch}_{dataset}.pth")
     state_dict = torch.load(dir)
     model.load_state_dict(state_dict)
     return model
