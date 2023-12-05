@@ -13,11 +13,6 @@ def modify_args(args):
     elif args.data == 'imagenette':
         args.num_classes = 10
         
-    if args.arch == 'resnet50':
-        args.lr = 0.00000001
-    else: 
-        args.lr = 0.000001
-
     if not hasattr(args, "save_path") or args.save_path is None:
         args.save_path = os.path.join("models", args.arch, args.data, )#datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
 
@@ -60,23 +55,16 @@ arch_group.add_argument('--arch', '-a', metavar='ARCH', default='resnet50',
 arch_group.add_argument('--use-pretrained-arch', dest='use_pretrained_arch', 
                         action='store_true', 
                         default=False, help='Whether to load in a state dict for the base model (default: False)')
+arch_group.add_argument('--use-pretrained-classifiers', dest='use_pretrained_classifiers', 
+                        action='store_true', 
+                        default=False, help='Whether to load in a state dict for the early exit classifiers (default: False)')
 
 # training related
 optim_group = arg_parser.add_argument_group('optimization', 'optimization setting')
-optim_group.add_argument('-b', '--batch-size', default=32, type=int, help='batch size for train dataloader')
-optim_group.add_argument('-tb', '--test-batch-size', default=32, type=int, help='batch size for test dataloader')
-optim_group.add_argument('--arch-epochs', default=150, type=int, metavar='N',
-                         help='manual epoch number (useful on restarts)')
-optim_group.add_argument('--arch-lr', default=0.1, type=float, metavar='N',
-                         help='learning rate for training base model')
-optim_group.add_argument('--classifier-epochs', default=30, type=int, metavar='N',
-                         help='manual epoch number (useful on restarts)')
 
 # inference related
 optim_group = arg_parser.add_argument_group('inference', 'inference setting')
 optim_group.add_argument('--alpha', type=float, metavar='N',
                         help='alpha value for training gate layers, scans range if not provided')
-optim_group.add_argument('--gate-epochs', default=3, type=int, metavar='N',
-                         help='manual epoch number (useful on restarts)')
 # optim_group.add_argument('--val_budget', type=float,
 #                          help='average inference budget per sample, scans range if not provided')

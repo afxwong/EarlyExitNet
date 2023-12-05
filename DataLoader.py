@@ -28,7 +28,7 @@ class CustomDataLoader:
         self.num_workers = args.workers
         self.image_size = args.image_size
         
-    def get_dataset(self, dataset_name, batch_size=None, test_batch_size=None):
+    def get_dataset(self, dataset_name, batch_size):
         transform = transforms.Compose([
             transforms.Resize(self.image_size),
             transforms.ToTensor()])
@@ -64,11 +64,6 @@ class CustomDataLoader:
         test_volume = int(test_size * len(dataset))
         train_volume = len(dataset) - test_volume
         
-        if batch_size is None:
-            batch_size = 32 if dataset_name == "imagenette" else 64
-        if test_batch_size is None:
-            test_batch_size = batch_size
-
         train_dataset, test_dataset = random_split(dataset, [train_volume, test_volume])
         train_dataloader = DataLoader(
             train_dataset,
