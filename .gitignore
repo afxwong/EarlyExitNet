@@ -1,6 +1,14 @@
 data_vis/*
 cifar10_models/*
 **/runs/*
+models/**
+model_architectures/state_dicts/**
+**/__pycache__/**
+**.pt
+**.pth
+**.DS_Store
+**.vscode
+**log**.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

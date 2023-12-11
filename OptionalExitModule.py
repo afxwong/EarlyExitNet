@@ -10,6 +10,7 @@ class TrainingState(Enum):
     TRAIN_CLASSIFIER_EXIT = 2
     TRAIN_EXIT = 3
     INFER = 4
+    TRAIN_ARCH = 5
 
 class OptionalExitModule(nn.Module):
 
@@ -30,12 +31,12 @@ class OptionalExitModule(nn.Module):
     def set_state(self, state):
         self.state = state
           
-    def forward_train_classifier_forward(self, X, X_flat):
+    def forward_train_classifier_forward(self, X):
         # roll every sample forward (entire batch) to next module
         return self.module(X)
         
     
-    def forward_train_classifier_exit(self, X, X_flat):
+    def forward_train_classifier_exit(self, X_flat):
         # every sample is forced to exit
         self.y_hat = self.classifier(X_flat)
         raise EarlyExitException(y_hat=self.y_hat)
@@ -50,7 +51,7 @@ class OptionalExitModule(nn.Module):
         
         return self.module(X)
        
-    def dispatch_inference(self, X_flat, starttime):
+    def dispatch_inference(self, X_flat):
         if not self.exit_taken_idx.any(): return
         
         if X_flat.is_cuda:
@@ -63,19 +64,15 @@ class OptionalExitModule(nn.Module):
             
         if len(X_flat[self.exit_taken_idx]) == len(X_flat):
             # self.y_hat will have classification results to collect later on
-            self.gate_time = time.time() - starttime
             raise EarlyExitException(y_hat=self.y_hat)
             
     
     def forward_infer(self, X, X_flat):
-        starttime = time.time()
-        batch_size, _ = X_flat.shape
         # form (batch_size, ) vector of exit confidences
         self.exit_confidences = torch.sigmoid(self.exit_gate(X_flat).flatten())
         self.exit_taken_idx = self.exit_confidences > 0.5
-        self.dispatch_inference(X_flat, starttime)
+        self.dispatch_inference(X_flat)
             
-        self.gate_time = time.time() - starttime
         return self.module(X[~self.exit_taken_idx])
         
     def forward(self, X):
@@ -93,11 +90,11 @@ class OptionalExitModule(nn.Module):
             self.classifier = nn.Linear(flat_size, self.num_outputs).to(self.current_device)
         
         if self.state == TrainingState.TRAIN_CLASSIFIER_EXIT:
-            return self.forward_train_classifier_exit(X, X_flat)
+            return self.forward_train_classifier_exit(X_flat)
         elif self.state == TrainingState.TRAIN_CLASSIFIER_FORWARD:
-            return self.forward_train_classifier_forward(X, X_flat)
+            return self.forward_train_classifier_forward(X)
         elif self.state == TrainingState.TRAIN_EXIT:
             return self.forward_train_exit(X, X_flat)
-        if self.state == TrainingState.INFER:
+        if self.state == TrainingState.INFER or self.state == TrainingState.TRAIN_ARCH:
             return self.forward_infer(X, X_flat)
         

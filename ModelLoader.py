@@ -1,169 +1,175 @@
-import torch 
+import torch
 import torch.nn as nn
 import torchvision.models as models
 from EarlyExitModel import EarlyExitModel, TrainingState
 from EarlyStopException import EarlyExitException
 import os
-import shutil
-import pickle
-from densenet.DenseNet import DenseNet, Bottleneck
+from model_architectures import VGG, DenseNet, ResNet
+from args import model_names, dataset_names
+import logging
+from config import Config
+
 
 class ModelLoader:
-    
-    def __init__(self, model_type, device, alpha=None, dataloader=None):
-        self.download_cifar10()
-        
-        self.validate_model_type(model_type) # ensure correct model type
-        self.model_type = model_type
+    def __init__(self, args, device, dataloader=None):
+        self.model_type = args.arch
+        self.dataset = args.data
+        self.model_dir = args.save_path
+        self.alpha = args.alpha
+        self.use_pretrained_arch = args.use_pretrained_arch
+
         self.dataloader = dataloader
-        self.alpha = alpha
         self.device = device
-        
-    def download_cifar10(self):
-        # TODO: replace this 
-        if not os.path.exists('cifar10_models'):
-            # run command
-            os.system("git clone https://github.com/huyvnphan/PyTorch_CIFAR10")
-    
-            # copy cifar10_models folder to current directory
-            shutil.copytree(os.path.join("PyTorch_CIFAR10", "cifar10_models"), "cifar10_models")
-            
-            # delete the cloned repo
-            try:
-                shutil.rmtree("PyTorch_CIFAR10")
-            except: pass
-        from cifar10_models import vgg
-        
-    def validate_model_type(self, model_type):
-        if model_type not in ["resnet", "vgg_cifar10", "vgg_cifar100", "densenet_cifar100"]:
-            raise Exception("Model type {} not supported.".format(model_type))
-        
+
+        self.config = Config()
+
     def load_model(self, num_outputs, trained_classifiers=False, pretrained=False):
-        assert not (trained_classifiers and pretrained), "Cannot have both trained and untrained gate layers"
-        
+        assert not (
+            trained_classifiers and pretrained
+        ), "Cannot have both trained and untrained gate layers"
+
         if pretrained or trained_classifiers:
             if pretrained:
-                assert self.alpha is not None, "Alpha must be specified if pretrained is True"
-            assert self.dataloader is not None, "Dataloader must be specified if loading prior model"
-        
+                assert (
+                    self.alpha is not None
+                ), "Alpha must be specified if pretrained is True"
+            assert (
+                self.dataloader is not None
+            ), "Dataloader must be specified if loading prior model"
+
         should_add_layers = pretrained or trained_classifiers
-        if self.model_type == 'resnet':
-            model = self.load_resnet(num_outputs, should_add_layers)
-        elif self.model_type == 'vgg_cifar10':
-            model = self.load_vgg_cifar10(num_outputs, should_add_layers)
-        elif self.model_type == 'vgg_cifar100':
-            model = self.load_vgg_cifar100(num_outputs, should_add_layers)
-        elif self.model_type == 'densenet_cifar100':
-            model = self.load_densenet_cifar100(num_outputs, should_add_layers)
-            
+        if self.model_type == "resnet50":
+            model = self.load_resnet50(num_outputs)
+        elif self.model_type == "vgg11_bn":
+            model = self.load_vgg11(num_outputs)
+        elif self.model_type == "densenet121":
+            model = self.load_densenet121(num_outputs)
+        elif self.model_type == "resnet56":
+            model = self.load_resnet56(num_outputs)
+        else:
+            raise Exception("Model type {} not supported.".format(self.model_type))
+
+        self.add_exits(
+            model,
+            self.config.model_params[self.dataset][self.model_type]["ee_layer_locations"],
+            should_add_layers,
+        )
+
         # load prior model state if needed
-        if pretrained or trained_classifiers:
-            print("Setting model weights...")
+        if should_add_layers:
+            logging.debug("Setting model weights...")
             if pretrained:
-                alpha_no_decimals = str(self.alpha).replace('.', '_')
+                alpha_no_decimals = str(self.alpha).replace(".", "_")
                 model_name = f"full_model_with_exit_gates_alpha_{alpha_no_decimals}.pth"
             else:
                 model_name = f"final_classifier.pth"
-            state_dict_path = os.path.join('models', self.model_type, model_name)   
-            assert os.path.exists(state_dict_path), f"State dict path {state_dict_path} does not exist"
-            model.load_state_dict(torch.load(state_dict_path, map_location='cpu'))
-            
+            state_dict_path = os.path.join(self.model_dir, model_name)
+            assert os.path.exists(
+                state_dict_path
+            ), f"State dict path {state_dict_path} does not exist"
+            model.load_state_dict(torch.load(state_dict_path, map_location="cpu"))
+
         # reset the states
         model.set_state(TrainingState.INFER)
-            
+
         model.to(self.device)
+        logging.debug(f"Model: \n{model}")
+
         return model
-    
+
     def add_exits(self, model, exit_layer_attrs, should_add_layers):
-        print("Adding exits...")
+        logging.debug("Adding exits...")
         if should_add_layers:
             X, _ = next(iter(self.dataloader))
-        
+
         for layer in exit_layer_attrs:
-            model.add_exit(layer, self.model_type)
-        
-            if not should_add_layers: continue
+            model.add_exit(layer)
+
+            if not should_add_layers:
+                continue
             # now since we don't know the shape of the input, we need to run a forward pass
             # this will generate the classifiers and exit gates
             # only needed to load state dict properly
-            
+
             # set the exits to force forward except the last one
             for i in range(len(model.exit_modules) - 1):
                 exit_module = model.exit_modules[i]
-                exit_module.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)  
+                exit_module.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
             model.exit_modules[-1].set_state(TrainingState.TRAIN_CLASSIFIER_EXIT)
-            
+
             # run one data batch to create classifiers with proper shape
             try:
                 model.model(X)
-            except EarlyExitException: 
+            except EarlyExitException:
                 pass
-        
-       
-    def load_resnet(self, num_outputs, pretrained=False):
-        print(f"Loading EarlyExit ResNet50 model architecture...")
-        resnet = models.resnet50(pretrained=True)
-        
-        # set requires_grad to False to freeze the parameters
-        for param in resnet.parameters():
-            param.requires_grad = False
-        
-        resnet.fc = nn.Linear(resnet.fc.in_features, num_outputs)
+
+    def load_resnet50(self, num_outputs):
+        logging.info(f"Loading EarlyExit ResNet50 model architecture...")
+        resnet = ResNet.ResNet50(
+            num_classes=num_outputs,
+            pretrained=self.use_pretrained_arch,
+            dataset=self.dataset,
+        )
+
+        if not self.use_pretrained_arch:
+            # set requires_grad to False to freeze the parameters
+            for param in resnet.parameters():
+                param.requires_grad = False
+
         model = EarlyExitModel(resnet, num_outputs, self.device)
         model.clear_exits()
         model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
-        
-        self.add_exits(model, ['layer1', 'layer2', 'layer3'], pretrained)
-        
+
         return model
-    
-    def load_vgg_cifar10(self, num_outputs, pretrained=False):
-        print(f"Loading EarlyExit VGG11 model architecture...")
-        from cifar10_models import vgg
-        vggModel = vgg.vgg11_bn(pretrained=True)
-        # set requires_grad to False to freeze the parameters
-        for param in vggModel.parameters():
-            param.requires_grad = False
-        vggModel.classifier[-1] = nn.Linear(vggModel.classifier[-1].in_features, num_outputs)
-        
+
+    def load_resnet56(self, num_outputs):
+        logging.info(f"Loading EarlyExit ResNet56 model architecture...")
+        resnet = ResNet.ResNet56(
+            num_classes=num_outputs,
+            pretrained=self.use_pretrained_arch,
+            dataset=self.dataset,
+        )
+
+        if not self.use_pretrained_arch:
+            # set requires_grad to False to freeze the parameters
+            for param in resnet.parameters():
+                param.requires_grad = False
+
+        model = EarlyExitModel(resnet, num_outputs, self.device)
+        model.clear_exits()
+        model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
+
+        return model
+
+    def load_vgg11(self, num_outputs):
+        logging.info(f"Loading EarlyExit VGG11 model architecture...")
+        vggModel = VGG.vgg11_bn(
+            pretrained=self.use_pretrained_arch, dataset=self.dataset
+        )
+        if not self.use_pretrained_arch:
+            # set requires_grad to False to freeze the parameters
+            for param in vggModel.parameters():
+                param.requires_grad = False
         model = EarlyExitModel(vggModel, num_outputs, self.device)
         model.clear_exits()
         model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
-        self.add_exits(model, ['features.8', 'features.15', 'features.22', 'avgpool'], pretrained)
-        
+
         return model
-            
-            
-    def load_vgg_cifar100(self, num_outputs, pretrained=False):
-        print(f"Loading EarlyExit VGG11 model architecture...")
-        vgg = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_vgg11_bn", pretrained=True)
-        # set requires_grad to False to freeze the parameters
-        for param in vgg.parameters():
-            param.requires_grad = False
-        vgg.classifier[-1] = nn.Linear(vgg.classifier[-1].in_features, num_outputs)
-        model = EarlyExitModel(vgg, num_outputs, self.device)
-        model.clear_exits()
-        
-        model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
-        self.add_exits(model, ['features.8', 'features.15', 'features.22', "classifier.0"], pretrained)
-        
-        return model
-    
-    def load_densenet_cifar100(self, num_outputs, pretrained=False):
-        print(f"Loading EarlyExit DenseNet121 model architecture...")
-        densenet = DenseNet(Bottleneck, [6, 12, 24, 16], growth_rate=12, num_classes=100)
-        model_path = os.path.join('models', self.model_type, 'densenet_cifar100.pth')
-        densenet.load_state_dict(torch.load(model_path, map_location='cpu'))
-        densenet.ee_classifiers = None
-        densenet.ee_layer_locations = []
-        # set requires_grad to False to freeze the parameters
-        for param in densenet.parameters():
-            param.requires_grad = False
-        densenet.linear = nn.Linear(densenet.linear.in_features, num_outputs)
+
+    def load_densenet121(self, num_outputs):
+        logging.info(f"Loading EarlyExit DenseNet121 model architecture...")
+        densenet = DenseNet.densenet121(
+            num_classes=num_outputs,
+            pretrained=self.use_pretrained_arch,
+            dataset=self.dataset,
+        )
+        if not self.use_pretrained_arch:
+            # set requires_grad to False to freeze the parameters
+            for param in densenet.parameters():
+                param.requires_grad = False
         model = EarlyExitModel(densenet, num_outputs, self.device)
         model.clear_exits()
-        
+
         model.set_state(TrainingState.TRAIN_CLASSIFIER_FORWARD)
-        self.add_exits(model, ['dense2', 'dense3', 'dense4'], pretrained)
-        
+
         return model

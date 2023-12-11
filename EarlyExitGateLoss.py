@@ -18,7 +18,7 @@ class EarlyExitGateLoss(nn.Module):
         # exit_confidences: (batch_size, num_exits)
         # costs: (num_exits+1, )
         
-        batch_size, num_classifiers, num_outputs = y_hats.shape
+        batch_size, num_classifiers, _ = y_hats.shape
         num_exits = num_classifiers - 1
         
         # MARK: - 1st Half of Loss Function
