@@ -66,5 +66,7 @@ optim_group = arg_parser.add_argument_group('optimization', 'optimization settin
 optim_group = arg_parser.add_argument_group('inference', 'inference setting')
 optim_group.add_argument('--alpha', type=float, metavar='N',
                         help='alpha value for training gate layers, scans range if not provided')
-# optim_group.add_argument('--val_budget', type=float,
-#                          help='average inference budget per sample, scans range if not provided')
+optim_group.add_argument('--val-budget', type=float,
+                         help='average inference budget per batch')
+optim_group.add_argument('--speedup-factor', type=float,
+                         help='desired speedup factor for the model')

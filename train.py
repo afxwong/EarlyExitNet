@@ -51,7 +51,9 @@ class Runner:
             return
 
         # Check PyTorch has access to MPS (Metal Performance Shader, Apple's GPU architecture)
-        logging.debug(f"Is MPS (Metal Performance Shader) built? {torch.backends.mps.is_built()}")
+        logging.debug(
+            f"Is MPS (Metal Performance Shader) built? {torch.backends.mps.is_built()}"
+        )
         logging.debug(f"Is MPS available? {torch.backends.mps.is_available()}")
 
         # Check for CUDA support
@@ -91,15 +93,13 @@ class Runner:
         self.model = self.modelloader.load_model(
             self.args.num_classes, trained_classifiers, pretrained
         )
-        
+
     def train_base_model(self):
         self.get_dataloader("train")
         self.get_model()
         self.trainer = ModelTrainer(self.model, self.device, self.args)
         # save to state dict folder and train full model
-        self.trainer.set_model_dir(
-            os.path.join("model_architectures", "state_dicts")
-        )
+        self.trainer.set_model_dir(os.path.join("model_architectures", "state_dicts"))
         self.trainer.train_full_model(
             self.train_dataloader,
             epoch_count=self.config.training_params[self.args.data][self.args.arch][
@@ -117,7 +117,9 @@ class Runner:
         self.trainer = ModelTrainer(self.model, self.device, self.args)
         self.trainer.train_classifiers(
             self.train_dataloader,
-            epoch_count=self.config.train_classifier_params[self.args.data][self.args.arch]["num_epoch"],
+            epoch_count=self.config.train_classifier_params[self.args.data][
+                self.args.arch
+            ]["num_epoch"],
             validation_loader=self.test_dataloader,
         )
 
@@ -130,7 +132,9 @@ class Runner:
             alpha_range = [self.args.alpha]
 
         lr = self.config.inference_params[self.args.data][self.args.arch]["lr"]
-        gate_epochs = self.config.inference_params[self.args.data][self.args.arch]["num_epoch"]
+        gate_epochs = self.config.inference_params[self.args.data][self.args.arch][
+            "num_epoch"
+        ]
 
         for alpha in alpha_range:
             logging.info(f"Training alpha = {alpha}")
@@ -145,13 +149,95 @@ class Runner:
                 epoch_count=gate_epochs,
                 validation_loader=self.test_dataloader,
             )
+
+    def optimize_for_alpha(self, speedupFactor, timeTarget):
+        # calculate original model time
+        self.get_dataloader("gate")
+        self.get_model(trained_classifiers=True)
+        self.model.clear_exits()
+
+        self.trainer = ModelTrainer(self.model, self.device, self.args)
+        acc, time, exit_idx = self.trainer.validate_exit_gates(self.test_dataloader)
+
+        alpha_list = [i / 1000 for i in range(1001)]
+
+        if timeTarget is None:
+            timeTarget = time / speedupFactor
             
+        if timeTarget > time:
+            logging.error(f"Time target {timeTarget} is greater than base model inference {time}.")
+            return None
+        
+        self.binarySearch(alpha_list, timeTarget)
+
+    def binarySearch(self, alpha_list, timeTarget):
+        left = 0
+        right = len(alpha_list) - 1
+        while left < right:
+            mid = (left + right) // 2
+            alpha = alpha_list[mid]
+            self.get_model(trained_classifiers=True)
+            self.trainer = ModelTrainer(self.model, self.device, self.args)
+            self.trainer.set_alpha(alpha)
+
+            lr = self.config.inference_params[self.args.data][self.args.arch]["lr"]
+            gate_epochs = self.config.inference_params[self.args.data][self.args.arch][
+                "num_epoch"
+            ]
+
+            self.trainer.train_exit_layers(
+                self.train_dataloader,
+                lr=lr,
+                epoch_count=gate_epochs,
+                validation_loader=self.test_dataloader,
+            )
+
+            acc, time, exit_idx = self.trainer.validate_exit_gates(self.test_dataloader)
+            logging.debug(f"Alpha: {alpha}, Time: {time}, Target: {timeTarget}")
+            logging.debug(
+                "Prioritizing Cost" if time > timeTarget else "Prioritizing Accuracy"
+            )
+
+            if time - timeTarget > 0.03:
+                # If over the time target, we need to increase alpha
+                # Aka we need higher cost savings
+                left = mid + 1
+            elif timeTarget - time > 0.03:
+                # If under the time target, we need to decrase alpha
+                # Aka we need higher accuracy
+                right = mid
+            else:
+                # we found the optimal alpha
+                left = mid
+                break
+
+        if abs(time - timeTarget) > 0.03:
+            logging.error(
+                f"Optimal alpha not found. Time: {time}, Target: {timeTarget}"
+            )
+            return None
+        else:
+            logging.info(f"Optimal alpha: {alpha_list[left]}")
+            logging.info(f"Time: {time}, Target: {timeTarget}")
+            logging.info(f"Accuracy: {acc}, Average Exit Index: {exit_idx}")
+            return alpha_list[left]
+
     def run(self):
         if not self.args.use_pretrained_arch:
             self.train_base_model()
         if not self.args.use_pretrained_classifiers:
             runner.train_classifiers()
-        runner.train_gates()
+
+        assert (
+            self.args.alpha is not None
+            or self.args.speedupFactor is not None
+            or self.args.timeTarget is not None
+        ), "Either alpha, speedup factor, or time target must be specified."
+        
+        if self.args.alpha is not None:
+            self.train_gates()
+        else:
+            self.optimize_for_alpha(self.args.speedupFactor, self.args.val_budget)
 
 
 if __name__ == "__main__":
