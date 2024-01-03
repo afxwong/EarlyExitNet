@@ -231,13 +231,13 @@ class Runner:
         assert (
             self.args.alpha is not None
             or self.args.speedupFactor is not None
-            or self.args.timeTarget is not None
+            or self.args.valBudget is not None
         ), "Either alpha, speedup factor, or time target must be specified."
         
         if self.args.alpha is not None:
             self.train_gates()
         else:
-            self.optimize_for_alpha(self.args.speedupFactor, self.args.val_budget)
+            self.optimize_for_alpha(self.args.speedupFactor, self.args.valBudget)
 
 
 if __name__ == "__main__":
